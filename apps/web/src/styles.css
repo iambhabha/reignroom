@@ -1,0 +1,117 @@
+@import "tailwindcss";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+
+/*
+ * Semantic tokens. Components use only these (via the Tailwind names below), never raw colours.
+ * Contrast (WCAG, checked numerically): text, muted, accent-text, success and danger ≥ 4.5:1 on bg,
+ * surface and surface-2 in both themes; border-strong and focus ≥ 3:1 on bg;
+ * accent-ink on accent ≥ 4.5:1; player colours are used for bars/chips with player-ink text.
+ */
+:root {
+  color-scheme: dark;
+  --bg: #14161a;
+  --surface: #1c1f24;
+  --surface-2: #262a31;
+  --border: #353a44;
+  --border-strong: #6c7380;
+  --text: #eef0f3;
+  --text-muted: #a8aeb9;
+  --accent: #ff6a2b;
+  --accent-hover: #ff8250;
+  --accent-ink: #1b0c04;
+  --accent-text: #ff8a57;
+  --focus: #ffb48c;
+  --success: #4fd68b;
+  --success-ink: #06200f;
+  --danger: #ff7a7a;
+  --danger-bg: #3a1d1f;
+  --p1: #ff6b6b;
+  --p2: #5eaeff;
+  --p3: #4fd68b;
+  --p4: #ffd43b;
+  --player-ink: #121417;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --surface-2: #eeece7;
+    --border: #d9d5cc;
+    --border-strong: #8c877d;
+    --text: #16181c;
+    --text-muted: #545b66;
+    --accent: #c2410c;
+    --accent-hover: #a7370a;
+    --accent-ink: #ffffff;
+    --accent-text: #b13a0a;
+    --focus: #c2410c;
+    --success: #157a43;
+    --success-ink: #ffffff;
+    --danger: #b42318;
+    --danger-bg: #fdecea;
+    --p1: #d63a3a;
+    --p2: #2f6fd1;
+    --p3: #1a7a47;
+    --p4: #8a6700;
+    --player-ink: #ffffff;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-text: var(--accent-text);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-success-ink: var(--success-ink);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-p1: var(--p1);
+  --color-p2: var(--p2);
+  --color-p3: var(--p3);
+  --color-p4: var(--p4);
+  --color-player-ink: var(--player-ink);
+
+  --font-sans: "Barlow", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

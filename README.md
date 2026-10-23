@@ -21,8 +21,33 @@ input comes back to the host and appears in PCSX2 as virtual controllers.
 
 ## Development
 
+Needs Node.js 22 or later.
+
 ```bash
 npm install
 npm run typecheck
 npm test
 ```
+
+**Whole site on one port** (what production looks like): builds the site, then `wrangler dev`
+serves it and the API at http://localhost:8787.
+
+```bash
+npm run preview
+```
+
+**Live-reloading UI**: copy `apps/worker/.dev.vars.example` to `apps/worker/.dev.vars`, then run
+these in two terminals and open http://localhost:5173 (Vite forwards `/api` to the Worker).
+
+```bash
+npm run dev:worker
+npm run dev:web
+```
+
+To try a room locally, open the site in two browser tabs: names and host access are kept per tab,
+so each tab is a separate player.
+
+**Windows path length:** local Durable Object data lives under
+`apps/worker/.wrangler/state/v3/do/…` with a 64-character file name. If the repository sits in a
+very deep folder, that path can pass Windows' 260-character limit and every room request fails with
+an "internal error". Clone to a shorter path, or run `npx wrangler dev --persist-to C:/rr-state`.

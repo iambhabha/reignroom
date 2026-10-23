@@ -1,0 +1,21 @@
+{
+  "name": "@reignroom/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types --strict-vars=false",
+    "typecheck": "wrangler types --strict-vars=false && tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@reignroom/protocol": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.7",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.152.0"
+  }
+}

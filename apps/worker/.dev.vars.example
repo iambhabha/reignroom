@@ -1,0 +1,3 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# The Vite dev server runs on a different port and opens room sockets from there.
+ALLOWED_ORIGINS=http://localhost:5173
