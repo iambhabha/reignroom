@@ -1,0 +1,19 @@
+{
+  "name": "reignroom",
+  "private": true,
+  "description": "Online play rooms for Urban Reign (PS2) in PCSX2. Fan project; bring your own legally dumped game and BIOS.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
