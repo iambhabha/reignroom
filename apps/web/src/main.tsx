@@ -4,7 +4,10 @@ import { BrowserRouter, Link, Route, Routes } from "react-router";
 import { Layout } from "./components/Layout.tsx";
 import { Home } from "./pages/Home.tsx";
 import { Room } from "./pages/Room.tsx";
+import { hostKeyFor } from "./lib/storage.ts";
 import "./styles.css";
+
+hostKeyFor.prune();
 
 function NotFound() {
   return (

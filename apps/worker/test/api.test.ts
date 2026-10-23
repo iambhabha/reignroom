@@ -40,7 +40,14 @@ describe("GET /api/rooms/:code", () => {
     const res = await api(`/api/rooms/${code}`);
     expect(res.status).toBe(200);
     const info = RoomInfoRes.parse(await res.json());
-    expect(info).toEqual({ code, players: 4, openSlots: [1, 2, 3, 4], hostOnline: false, live: false });
+    expect(info).toEqual({
+      code,
+      players: 4,
+      openSlots: [1, 2, 3, 4],
+      hostOnline: false,
+      live: false,
+      locked: false,
+    });
   });
 
   it("404s for unknown and malformed codes", async () => {

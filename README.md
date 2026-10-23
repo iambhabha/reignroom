@@ -44,8 +44,9 @@ npm run dev:worker
 npm run dev:web
 ```
 
-To try a room locally, open the site in two browser tabs: names and host access are kept per tab,
-so each tab is a separate player.
+To try a room locally with two players on one computer, use two different addresses, for example
+http://localhost:8787 for the host and http://127.0.0.1:8787 for the guest. Host access is
+remembered per browser and address, so two tabs on the same address would both be the host.
 
 **Windows path length:** local Durable Object data lives under
 `apps/worker/.wrangler/state/v3/do/…` with a 64-character file name. If the repository sits in a

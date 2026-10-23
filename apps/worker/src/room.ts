@@ -23,6 +23,8 @@ interface Meta {
   code: string;
   players: PlayerCount;
   live: boolean;
+  /** New members are refused; held seats and the host can still come back. */
+  locked: boolean;
   hostKeyHash: string;
   /** Set when the last socket closes; the room is deleted ROOM_IDLE_MS later. */
   emptySince: number | null;
@@ -85,7 +87,15 @@ export class RoomDO extends DurableObject<Env> {
   /** Returns false if this code is already in use. */
   async init(code: string, players: PlayerCount, hostKeyHash: string): Promise<boolean> {
     if (this.meta) return false;
-    this.meta = { code, players, live: false, hostKeyHash, emptySince: Date.now(), chatSeq: 0 };
+    this.meta = {
+      code,
+      players,
+      live: false,
+      locked: false,
+      hostKeyHash,
+      emptySince: Date.now(),
+      chatSeq: 0,
+    };
     await this.persist();
     await this.scheduleAlarm();
     return true;
@@ -104,6 +114,7 @@ export class RoomDO extends DurableObject<Env> {
       openSlots,
       hostOnline: host !== undefined && online.has(host.peer),
       live: meta.live,
+      locked: meta.locked,
     };
   }
 
@@ -166,6 +177,8 @@ export class RoomDO extends DurableObject<Env> {
         return this.onConfig(ws, seat, msg);
       case "stream":
         return this.onStream(ws, seat, msg);
+      case "lock":
+        return this.onLock(ws, seat, msg);
       case "sdp":
       case "ice":
         return this.onSignal(ws, seat, msg);
@@ -243,6 +256,7 @@ export class RoomDO extends DurableObject<Env> {
         if (old !== ws) old.close(CLOSE_REPLACED, "replaced by a newer connection");
       }
     } else {
+      if (!isHost && meta.locked) return this.fail(ws, "room_locked", true);
       const guests = [...this.seats.values()].filter((s) => !s.host).length;
       // One seat is always reserved for the host.
       if (!isHost && guests >= meta.players - 1) return this.fail(ws, "room_full", true);
@@ -342,6 +356,15 @@ export class RoomDO extends DurableObject<Env> {
     this.broadcastState();
   }
 
+  private async onLock(ws: WebSocket, seat: Seat, msg: Msg<"lock">): Promise<void> {
+    if (!seat.host) return this.fail(ws, "not_host");
+    if (this.meta!.locked === msg.locked) return;
+    this.meta!.locked = msg.locked;
+    await this.addChat("system", null, "", msg.locked ? "The host locked the room" : "The host unlocked the room");
+    await this.persist();
+    this.broadcastState();
+  }
+
   /** Relays WebRTC signaling between the host and one guest, never guest to guest. */
   private onSignal(ws: WebSocket, seat: Seat, msg: Msg<"sdp"> | Msg<"ice">): void {
     const target = this.seats.get(msg.to);
@@ -413,6 +436,7 @@ export class RoomDO extends DurableObject<Env> {
       code: meta.code,
       players: meta.players,
       live: meta.live,
+      locked: meta.locked,
       members: [...this.seats.values()].map((s) => ({
         peer: s.peer,
         name: s.name,

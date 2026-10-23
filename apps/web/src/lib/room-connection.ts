@@ -32,6 +32,7 @@ const FINAL: ReadonlySet<ErrorCode> = new Set([
   "version_mismatch",
   "room_not_found",
   "room_full",
+  "room_locked",
   "name_invalid",
   "name_taken",
   "bad_host_key",

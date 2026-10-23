@@ -40,6 +40,8 @@ export function Segmented<T extends string | number>({
               <input
                 type="radio"
                 name={name}
+                value={String(opt)}
+                aria-label={format(opt)}
                 className="sr-only"
                 checked={checked}
                 onChange={() => onChange(opt)}

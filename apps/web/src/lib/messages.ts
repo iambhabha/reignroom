@@ -8,6 +8,7 @@ export const noticeText: Record<ErrorCode, string> = {
   rate_limited: "Slow down a little. Some actions were skipped.",
   room_not_found: "This room doesn't exist or has expired.",
   room_full: "This room is full.",
+  room_locked: "The host has locked this room, so new players can't join.",
   name_invalid: "Pick a name with at least one visible character.",
   name_taken: "Someone in this room already uses that name.",
   slot_taken: "That slot was just taken.",
@@ -32,6 +33,10 @@ export const endText: Record<EndReason, { title: string; detail: string }> = {
   left: { title: "You left the room", detail: "Your slot is free for someone else." },
   room_not_found: { title: "Room not found", detail: "This room doesn't exist or has expired." },
   room_full: { title: "Room is full", detail: "All player slots are taken. Ask the host for a bigger room." },
+  room_locked: {
+    title: "Room is locked",
+    detail: "The host has locked this room, so new players can't join. Ask them to unlock it.",
+  },
   version_mismatch: { title: "Update needed", detail: "This page is out of date. Reload to continue." },
   bad_host_key: { title: "Host access denied", detail: "This tab doesn't have host access to the room." },
   name_invalid: { title: "Name not allowed", detail: noticeText.name_invalid },

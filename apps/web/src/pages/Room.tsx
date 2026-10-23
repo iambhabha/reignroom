@@ -7,7 +7,7 @@ import { Lobby } from "../components/lobby/Lobby.tsx";
 import { ApiFailure, getRoomInfo } from "../lib/api.ts";
 import { endText, noticeText } from "../lib/messages.ts";
 import { RoomConnection, type EndReason } from "../lib/room-connection.ts";
-import { hostKeyFor, savedName } from "../lib/storage.ts";
+import { forgetRoom, hostKeyFor, savedName } from "../lib/storage.ts";
 
 type Check = "checking" | "ok" | "missing" | "offline";
 
@@ -31,7 +31,12 @@ function RoomGate({ code }: { code: string }) {
       .then(() => live && setCheck("ok"))
       .catch((err) => {
         if (!live) return;
-        setCheck(err instanceof ApiFailure && err.code === "room_not_found" ? "missing" : "offline");
+        if (err instanceof ApiFailure && err.code === "room_not_found") {
+          forgetRoom(code);
+          setCheck("missing");
+        } else {
+          setCheck("offline");
+        }
       });
     return () => {
       live = false;
@@ -88,7 +93,8 @@ function Connected({
 
   useEffect(() => {
     if (snap.ended === "name_taken" || snap.ended === "name_invalid") onNameRejected(snap.ended);
-  }, [snap.ended, onNameRejected]);
+    if (snap.ended === "room_not_found") forgetRoom(code);
+  }, [snap.ended, onNameRejected, code]);
 
   if (snap.ended) {
     if (snap.ended === "name_taken" || snap.ended === "name_invalid") return null;

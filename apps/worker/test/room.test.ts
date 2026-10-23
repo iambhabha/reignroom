@@ -222,6 +222,58 @@ describe("host controls", () => {
   });
 });
 
+describe("room lock", () => {
+  it("refuses new members while locked, and tells everyone", async () => {
+    const { code, host, guest } = await hostAndGuest(3);
+    host.client.send({ t: "lock", locked: true });
+    await guest.client.settle();
+    expect(guest.client.of("state").at(-1)!.room.locked).toBe(true);
+    expect(guest.client.of("chat").at(-1)!.entry.text).toBe("The host locked the room");
+
+    const late = await Client.open(code);
+    late.send({ t: "hello", v: 1, name: "Late" });
+    expect(await late.next("error")).toEqual({ t: "error", code: "room_locked", fatal: true });
+
+    const info = await (await api(`/api/rooms/${code}`)).json<{ locked: boolean }>();
+    expect(info.locked).toBe(true);
+  });
+
+  it("still lets a member reconnect to their held seat", async () => {
+    const { code, host, guest } = await hostAndGuest();
+    host.client.send({ t: "lock", locked: true });
+    await host.client.settle();
+    guest.client.close();
+    await host.client.settle();
+    const again = await Client.join(code, "Guest", { resume: guest.welcome.resume });
+    expect(again.welcome.peer).toBe(guest.welcome.peer);
+  });
+
+  it("still lets the host back in with the host key", async () => {
+    const { code, hostKey, host } = await hostAndGuest();
+    host.client.send({ t: "lock", locked: true });
+    await host.client.settle();
+    host.client.close();
+    await host.client.settle();
+    const back = await Client.join(code, "Host", { hostKey });
+    expect(back.welcome.peer).toBe(host.welcome.peer);
+  });
+
+  it("opens again when unlocked", async () => {
+    const { code, host } = await hostAndGuest(3);
+    host.client.send({ t: "lock", locked: true });
+    host.client.send({ t: "lock", locked: false });
+    await host.client.settle();
+    const late = await Client.join(code, "Late");
+    expect(late.welcome.room.locked).toBe(false);
+  });
+
+  it("is host-only", async () => {
+    const { guest } = await hostAndGuest();
+    guest.client.send({ t: "lock", locked: true });
+    expect(await guest.client.next("error")).toMatchObject({ code: "not_host", fatal: false });
+  });
+});
+
 describe("signaling relay", () => {
   it("relays sdp and ice between host and guest with the sender's id", async () => {
     const { host, guest } = await hostAndGuest();

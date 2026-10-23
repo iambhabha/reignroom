@@ -58,6 +58,8 @@ export const ClientMsg = z.discriminatedUnion("t", [
   z.strictObject({ t: z.literal("kick"), peer: PeerId }),
   z.strictObject({ t: z.literal("config"), players: PlayerCountSchema }),
   z.strictObject({ t: z.literal("stream"), live: z.boolean() }),
+  /** Locked rooms refuse new members; existing members can still reconnect. */
+  z.strictObject({ t: z.literal("lock"), locked: z.boolean() }),
   // WebRTC signaling, relayed only between the host and one guest
   z.strictObject({
     t: z.literal("sdp"),
@@ -88,6 +90,8 @@ export const RoomState = z.strictObject({
   players: PlayerCountSchema,
   /** Host is streaming the game. */
   live: z.boolean(),
+  /** New members can't join; seats held for reconnects still can. */
+  locked: z.boolean(),
   members: z.array(Member),
 });
 export type RoomState = z.infer<typeof RoomState>;
@@ -109,6 +113,7 @@ export const ErrorCode = z.enum([
   "rate_limited",
   "room_not_found",
   "room_full",
+  "room_locked",
   "name_invalid",
   "name_taken",
   "slot_taken",
@@ -158,6 +163,7 @@ export const RoomInfoRes = z.strictObject({
   openSlots: z.array(SlotSchema),
   hostOnline: z.boolean(),
   live: z.boolean(),
+  locked: z.boolean(),
 });
 export type RoomInfoRes = z.infer<typeof RoomInfoRes>;
 

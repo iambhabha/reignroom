@@ -47,7 +47,12 @@ export function Home() {
     setCodeError(null);
     setBusy("join");
     try {
-      await getRoomInfo(code);
+      const info = await getRoomInfo(code);
+      // A locked room still lets its host back in from this browser.
+      if (info.locked && !hostKeyFor.get(code)) {
+        setCodeError(noticeText.room_locked);
+        return;
+      }
       navigate(`/r/${code}`);
     } catch (err) {
       setCodeError(
