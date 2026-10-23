@@ -7,6 +7,8 @@ import type { RoomConnection, Snapshot } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
 import { Segmented } from "../Segmented.tsx";
 import { Switch } from "../Switch.tsx";
+import { GuestPanel } from "../stream/GuestPanel.tsx";
+import { HostPanel } from "../stream/HostPanel.tsx";
 import { Chat } from "./Chat.tsx";
 import { SlotList } from "./SlotList.tsx";
 
@@ -57,6 +59,7 @@ export function Lobby({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
         <div className="flex flex-col gap-6">
+          {isHost ? <HostPanel conn={conn} room={room} /> : <GuestPanel conn={conn} room={room} />}
           <SlotList conn={conn} room={room} me={me} isHost={isHost} />
           {isHost && (
             <section aria-labelledby="room-settings" className="flex flex-col gap-3">

@@ -13,6 +13,9 @@ export type Status = "connecting" | "open" | "reconnecting" | "closed";
 /** Why the connection ended for good. */
 export type EndReason = ErrorCode | "kicked" | "replaced" | "connection_lost" | "left";
 
+/** WebRTC signaling relayed by the room. */
+export type SignalMsg = Extract<ServerMsg, { t: "sdp" | "ice" | "want-offer" }>;
+
 export interface Notice {
   code: ErrorCode;
   id: number;
@@ -50,6 +53,7 @@ const CLOSE_KICKED = 4001;
 export class RoomConnection {
   private ws: WebSocket | null = null;
   private listeners = new Set<() => void>();
+  private signalListeners = new Set<(msg: SignalMsg) => void>();
   private snap: Snapshot = {
     status: "connecting",
     peer: null,
@@ -76,6 +80,11 @@ export class RoomConnection {
   };
 
   getSnapshot = (): Snapshot => this.snap;
+
+  onSignal(fn: (msg: SignalMsg) => void): () => void {
+    this.signalListeners.add(fn);
+    return () => this.signalListeners.delete(fn);
+  }
 
   start(): void {
     if (this.ws || this.snap.ended) return;
@@ -176,7 +185,8 @@ export class RoomConnection {
         return;
       case "sdp":
       case "ice":
-        // WebRTC signaling is wired up in Phase 2.
+      case "want-offer":
+        for (const fn of this.signalListeners) fn(msg);
         return;
     }
   }

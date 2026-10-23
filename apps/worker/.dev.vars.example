@@ -1,3 +1,13 @@
 # Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
 # The Vite dev server runs on a different port and opens room sockets from there.
 ALLOWED_ORIGINS=http://localhost:5173
+
+# TURN relay (optional). Without these the site uses STUN only: direct connections, which work
+# for most home and mobile networks. Never commit real values.
+# Primary: Cloudflare Realtime TURN (dashboard > Realtime > TURN Server > create key).
+# TURN_KEY_ID=
+# TURN_KEY_API_TOKEN=
+# Fallback: any TURN service with fixed credentials, e.g. ExpressTURN (copy from its dashboard).
+# TURN_FALLBACK_URLS=turn:<server from dashboard>:3478?transport=udp,turn:<server>:3478?transport=tcp
+# TURN_FALLBACK_USERNAME=
+# TURN_FALLBACK_CREDENTIAL=

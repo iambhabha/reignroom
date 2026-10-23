@@ -17,14 +17,16 @@ export const noticeText: Record<ErrorCode, string> = {
   bad_host_key: "This link doesn't give host access.",
   peer_not_found: "That player is no longer in the room.",
   players_below_occupied: "Move players out of the higher slots first.",
+  not_member: "You're no longer in this room. Reload to rejoin.",
 };
 
 /** Headline and detail for the screen shown when the connection ends for good. */
 export const endText: Record<EndReason, { title: string; detail: string }> = {
   kicked: { title: "You were removed", detail: "The host removed you from this room." },
   replaced: {
-    title: "Opened somewhere else",
-    detail: "This room is now open in another tab or window. Continue there.",
+    title: "Open in another tab",
+    detail:
+      "This room is open in another tab or window, so this one was disconnected. Continue there, or reload this page to move the room back here.",
   },
   connection_lost: {
     title: "Connection lost",
@@ -48,4 +50,5 @@ export const endText: Record<EndReason, { title: string; detail: string }> = {
   not_host: { title: "Couldn't join", detail: noticeText.not_host },
   peer_not_found: { title: "Couldn't join", detail: noticeText.peer_not_found },
   players_below_occupied: { title: "Couldn't join", detail: noticeText.players_below_occupied },
+  not_member: { title: "Couldn't join", detail: noticeText.not_member },
 };

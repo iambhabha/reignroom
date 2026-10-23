@@ -109,11 +109,26 @@ describe("joining", () => {
     });
   });
 
-  it("replaces the older socket when the host reconnects with the host key", async () => {
-    const { code, hostKey, host } = await hostAndGuest();
+  it("keeps one host connection: the newest tab wins, the older one is closed with 4000", async () => {
+    const { code, hostKey, host, guest } = await hostAndGuest();
     const second = await Client.join(code, "Host", { hostKey });
     expect(second.welcome.peer).toBe(host.welcome.peer);
     expect((await host.client.waitClosed()).code).toBe(4000);
+
+    // Still exactly one host, online, and host actions work from the new tab only.
+    await guest.client.settle();
+    const hosts = guest.client.of("state").at(-1)!.room.members.filter((m) => m.host);
+    expect(hosts).toEqual([expect.objectContaining({ peer: host.welcome.peer, online: true })]);
+    second.client.send({ t: "lock", locked: true });
+    await guest.client.settle();
+    expect(guest.client.of("state").at(-1)!.room.locked).toBe(true);
+  });
+
+  it("does the same for a guest opened in two tabs with the same resume token", async () => {
+    const { code, guest } = await hostAndGuest();
+    const second = await Client.join(code, "Guest", { resume: guest.welcome.resume });
+    expect(second.welcome.peer).toBe(guest.welcome.peer);
+    expect((await guest.client.waitClosed()).code).toBe(4000);
   });
 });
 

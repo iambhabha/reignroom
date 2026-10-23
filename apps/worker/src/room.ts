@@ -118,6 +118,13 @@ export class RoomDO extends DurableObject<Env> {
     };
   }
 
+  /** True if `resume` is the current resume token of someone in this room. */
+  async isMember(resume: string): Promise<boolean> {
+    if (!this.meta) return false;
+    const hash = await sha256(resume);
+    return [...this.seats.values()].some((s) => s.resumeHash === hash);
+  }
+
   // ── WebSocket lifecycle ──────────────────────────────────────────────────
 
   override async fetch(request: Request): Promise<Response> {
@@ -151,7 +158,8 @@ export class RoomDO extends DurableObject<Env> {
     if (!parsed.success) return this.fail(ws, "bad_message", !this.peerOf(ws));
     const msg = parsed.data;
 
-    if (!this.allow(ws, msg.t === "sdp" || msg.t === "ice" ? "signal" : "general")) return;
+    const signaling = msg.t === "sdp" || msg.t === "ice" || msg.t === "want-offer";
+    if (!this.allow(ws, signaling ? "signal" : "general")) return;
 
     const peer = this.peerOf(ws);
     if (msg.t === "hello") {
@@ -181,6 +189,7 @@ export class RoomDO extends DurableObject<Env> {
         return this.onLock(ws, seat, msg);
       case "sdp":
       case "ice":
+      case "want-offer":
         return this.onSignal(ws, seat, msg);
     }
   }
@@ -366,7 +375,7 @@ export class RoomDO extends DurableObject<Env> {
   }
 
   /** Relays WebRTC signaling between the host and one guest, never guest to guest. */
-  private onSignal(ws: WebSocket, seat: Seat, msg: Msg<"sdp"> | Msg<"ice">): void {
+  private onSignal(ws: WebSocket, seat: Seat, msg: Msg<"sdp"> | Msg<"ice"> | Msg<"want-offer">): void {
     const target = this.seats.get(msg.to);
     const [targetSocket] = target ? this.socketsOf(target.peer) : [];
     if (!target || target.host === seat.host || !targetSocket) {
@@ -374,8 +383,12 @@ export class RoomDO extends DurableObject<Env> {
     }
     if (msg.t === "sdp") {
       this.send(targetSocket, { t: "sdp", from: seat.peer, kind: msg.kind, sdp: msg.sdp });
-    } else {
+    } else if (msg.t === "ice") {
       this.send(targetSocket, { t: "ice", from: seat.peer, cand: msg.cand });
+    } else if (target.host) {
+      this.send(targetSocket, { t: "want-offer", from: seat.peer });
+    } else {
+      this.fail(ws, "peer_not_found");
     }
   }
 

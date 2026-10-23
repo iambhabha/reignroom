@@ -52,3 +52,14 @@ remembered per browser and address, so two tabs on the same address would both b
 `apps/worker/.wrangler/state/v3/do/…` with a 64-character file name. If the repository sits in a
 very deep folder, that path can pass Windows' 260-character limit and every room request fails with
 an "internal error". Clone to a shorter path, or run `npx wrangler dev --persist-to C:/rr-state`.
+
+## Streaming and TURN
+
+Video goes straight from the host's browser to each guest (WebRTC). That uses STUN only by
+default, which works for most networks. For networks that block direct connections, set a TURN
+relay (optional): Cloudflare Realtime TURN is the primary option, any TURN service with fixed
+credentials (such as ExpressTURN) the fallback. The settings are listed in
+`apps/worker/.dev.vars.example`; on the deployed Worker set them with `wrangler secret put`.
+
+The **Test pattern** source checks guest video without PCSX2. For the two-network test, follow
+[docs/testing-across-networks.md](docs/testing-across-networks.md).

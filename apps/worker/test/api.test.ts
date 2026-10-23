@@ -57,6 +57,17 @@ describe("GET /api/rooms/:code", () => {
   });
 });
 
+describe("files that don't exist", () => {
+  it("are a real 404 that is never cached, not the app page", async () => {
+    for (const path of ["/assets/index-OLDHASH.js", "/assets/x.css", "/favicon.ico"]) {
+      const res = await api(path);
+      expect(res.status).toBe(404);
+      expect(res.headers.get("Cache-Control")).toBe("no-store");
+      expect(res.headers.get("Content-Type")).toMatch(/^text\/plain/);
+    }
+  });
+});
+
 describe("GET /api/rooms/:code/ws", () => {
   it("refuses sockets from foreign origins", async () => {
     const { code } = await createRoom();

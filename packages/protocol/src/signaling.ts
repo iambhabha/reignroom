@@ -69,6 +69,8 @@ export const ClientMsg = z.discriminatedUnion("t", [
   }),
   /** `cand: null` signals end of candidates. */
   z.strictObject({ t: z.literal("ice"), to: PeerId, cand: IceCandidate.nullable() }),
+  /** Guest → host: "send me a fresh offer" (after a reload or a failed connection). */
+  z.strictObject({ t: z.literal("want-offer"), to: PeerId }),
 ]);
 export type ClientMsg = z.infer<typeof ClientMsg>;
 
@@ -122,6 +124,7 @@ export const ErrorCode = z.enum([
   "bad_host_key",
   "peer_not_found",
   "players_below_occupied",
+  "not_member",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
@@ -142,6 +145,7 @@ export const ServerMsg = z.discriminatedUnion("t", [
     sdp: z.string(),
   }),
   z.strictObject({ t: z.literal("ice"), from: PeerId, cand: IceCandidate.nullable() }),
+  z.strictObject({ t: z.literal("want-offer"), from: PeerId }),
   /** Removed by the host. The socket is closed right after. */
   z.strictObject({ t: z.literal("kicked") }),
   /** `fatal: true` means the socket is closed right after. */
@@ -166,6 +170,22 @@ export const RoomInfoRes = z.strictObject({
   locked: z.boolean(),
 });
 export type RoomInfoRes = z.infer<typeof RoomInfoRes>;
+
+/** Proves room membership with the caller's current resume token. */
+export const IceReq = z.strictObject({ resume: Secret });
+export type IceReq = z.infer<typeof IceReq>;
+
+export const IceServer = z.strictObject({
+  urls: z.array(z.string()),
+  username: z.string().optional(),
+  credential: z.string().optional(),
+});
+export const IceRes = z.strictObject({
+  iceServers: z.array(IceServer),
+  /** Which relay is configured: "none" means STUN only (direct connections). */
+  relay: z.enum(["cloudflare", "fallback", "none"]),
+});
+export type IceRes = z.infer<typeof IceRes>;
 
 export const ApiError = z.strictObject({ error: ErrorCode });
 export type ApiError = z.infer<typeof ApiError>;
