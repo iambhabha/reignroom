@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RoomState } from "@reignroom/protocol";
+import { AgentBridge } from "../../lib/agent.ts";
 import { HostStream, type Source } from "../../lib/rtc/host.ts";
 import { QUALITIES, uploadMbps, type Quality } from "../../lib/rtc/quality.ts";
 import type { RoomConnection } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
 import { Segmented } from "../Segmented.tsx";
+import { BridgePanel } from "./BridgePanel.tsx";
 import { fps, routeLabel, rttLabel, size } from "./format.ts";
 
 const SOURCES: { value: Source; title: string; detail: string }[] = [
@@ -20,11 +22,13 @@ const SOURCES: { value: Source; title: string; detail: string }[] = [
 const qualityLabel = (q: Quality) => q.replace("p60", "p");
 
 export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomState }) {
-  const [stream] = useState(() => new HostStream(conn, room.code));
+  const [bridge] = useState(() => new AgentBridge());
+  const [stream] = useState(() => new HostStream(conn, room.code, bridge));
   const snap = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
   const [source, setSource] = useState<Source>("window");
 
   useEffect(() => stream.attach(), [stream]);
+  useEffect(() => bridge.attach(), [bridge]);
   useEffect(() => stream.syncRoom(room), [stream, room]);
 
   const guests = room.members.filter((m) => !m.host);
@@ -32,68 +36,71 @@ export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomStat
   const estimate = uploadMbps(snap.quality, onlineGuests, snap.live ? snap.hasAudio : source === "screen");
 
   return (
-    <section aria-labelledby="stream-heading" className="flex flex-col gap-5 rounded-xl border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="stream-heading" className="font-display text-xl font-bold uppercase">
-          Stream
-        </h2>
-        {snap.live && <LiveTag />}
-      </div>
+    <>
+      <section aria-labelledby="stream-heading" className="flex flex-col gap-5 rounded-xl border border-border bg-surface p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="stream-heading" className="font-display text-xl font-bold uppercase">
+            Stream
+          </h2>
+          {snap.live && <LiveTag />}
+        </div>
 
-      {!snap.live ? (
-        <>
-          <SourcePicker value={source} onChange={setSource} disabled={snap.starting} />
-          <Segmented
-            label="Quality (60 fps)"
-            options={QUALITIES}
-            value={snap.quality}
-            onChange={(q) => stream.setQuality(q)}
-            format={qualityLabel}
-            disabled={snap.starting}
-          />
-          <Estimate mbps={estimate} guests={onlineGuests} />
-          {snap.error && (
-            <p role="alert" className="font-medium text-danger">
-              {snap.error}
-            </p>
-          )}
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={snap.starting}
-            onClick={() => void stream.start(source)}
-          >
-            {snap.starting ? "Waiting for you to pick…" : "Start streaming"}
-          </Button>
-        </>
-      ) : (
-        <>
-          {snap.surface === "monitor" && (
-            <p role="status" className="rounded-lg border border-accent/60 bg-surface-2 px-4 py-3 text-sm">
-              <strong className="font-semibold">You're sharing your entire screen.</strong> Guests can see
-              notifications, chat pop-ups and any window you open on it.
-            </p>
-          )}
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
-            <Preview stream={snap.preview} />
-            <div className="flex flex-col gap-3">
-              <Segmented
-                label="Quality (60 fps)"
-                options={QUALITIES}
-                value={snap.quality}
-                onChange={(q) => stream.setQuality(q)}
-                format={qualityLabel}
-              />
-              <Estimate mbps={estimate} guests={onlineGuests} />
+        {!snap.live ? (
+          <>
+            <SourcePicker value={source} onChange={setSource} disabled={snap.starting} />
+            <Segmented
+              label="Quality (60 fps)"
+              options={QUALITIES}
+              value={snap.quality}
+              onChange={(q) => stream.setQuality(q)}
+              format={qualityLabel}
+              disabled={snap.starting}
+            />
+            <Estimate mbps={estimate} guests={onlineGuests} />
+            {snap.error && (
+              <p role="alert" className="font-medium text-danger">
+                {snap.error}
+              </p>
+            )}
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={snap.starting}
+              onClick={() => void stream.start(source)}
+            >
+              {snap.starting ? "Waiting for you to pick…" : "Start streaming"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {snap.surface === "monitor" && (
+              <p role="status" className="rounded-lg border border-accent/60 bg-surface-2 px-4 py-3 text-sm">
+                <strong className="font-semibold">You're sharing your entire screen.</strong> Guests can see
+                notifications, chat pop-ups and any window you open on it.
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
+              <Preview stream={snap.preview} />
+              <div className="flex flex-col gap-3">
+                <Segmented
+                  label="Quality (60 fps)"
+                  options={QUALITIES}
+                  value={snap.quality}
+                  onChange={(q) => stream.setQuality(q)}
+                  format={qualityLabel}
+                />
+                <Estimate mbps={estimate} guests={onlineGuests} />
+              </div>
             </div>
-          </div>
-          <GuestList room={room} snap={snap} />
-          <Button variant="danger" onClick={() => stream.stop()} className="self-start">
-            Stop streaming
-          </Button>
-        </>
-      )}
-    </section>
+            <GuestList room={room} snap={snap} />
+            <Button variant="danger" onClick={() => stream.stop()} className="self-start">
+              Stop streaming
+            </Button>
+          </>
+        )}
+      </section>
+      <BridgePanel bridge={bridge} room={room} />
+    </>
   );
 }
 
@@ -216,7 +223,9 @@ function GuestList({ room, snap }: { room: RoomState; snap: ReturnType<HostStrea
             return (
               <li key={g.peer} className="flex flex-col gap-0.5 border-t border-border py-2">
                 <p className="flex flex-wrap items-baseline justify-between gap-x-3">
-                  <span className="font-semibold">{g.name}</span>
+                  <span className="font-semibold">
+                    {g.name} <span className="font-normal text-muted">{g.slot ? `· P${g.slot}` : "· no slot"}</span>
+                  </span>
                   <span className="text-sm">{status}</span>
                 </p>
                 {details && <p className="text-sm text-muted tabular-nums">{details}</p>}

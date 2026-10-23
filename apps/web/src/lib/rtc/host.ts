@@ -1,4 +1,5 @@
-import type { RoomState } from "@reignroom/protocol";
+import { GuestInput, type HostToGuest, type RoomState, type Slot } from "@reignroom/protocol";
+import type { AgentBridge } from "../agent.ts";
 import type { RoomConnection, SignalMsg } from "../room-connection.ts";
 import { candidateFromWire, candidateToWire } from "./wire.ts";
 import { fetchIce, type IceConfig } from "./ice.ts";
@@ -26,11 +27,16 @@ export interface HostSnapshot {
 
 interface Peer {
   pc: RTCPeerConnection;
+  /** Guest → host controller input; host → guest acks. Unordered, never retransmitted. */
+  input: RTCDataChannel;
   createdAt: number;
   pendingIce: RTCIceCandidateInit[];
   sample: { bytes: number; at: number } | null;
   retry?: ReturnType<typeof setTimeout>;
 }
+
+/** Acks the agent hasn't answered within this time are forgotten. */
+const PENDING_INPUT_MS = 2000;
 
 /** A fresh offer is not sent again for the same guest within this window. */
 const OFFER_DEBOUNCE_MS = 3000;
@@ -47,6 +53,10 @@ export class HostStream {
   private stopSource: (() => void) | null = null;
   private ice: IceConfig | null = null;
   private guests = new Set<string>();
+  /** Player slot each guest drives, from the room state. */
+  private slots = new Map<string, Slot>();
+  /** "slot:seq" → who sent it and their timestamp, until the agent acks it. */
+  private pending = new Map<string, { peer: string; ts: number; at: number }>();
   private statsTimer: ReturnType<typeof setInterval> | undefined;
   private iceTimer: ReturnType<typeof setInterval> | undefined;
   private snap: HostSnapshot = {
@@ -64,13 +74,23 @@ export class HostStream {
   constructor(
     private readonly conn: RoomConnection,
     private readonly code: string,
+    private readonly bridge: AgentBridge,
   ) {}
 
-  /** Starts listening for signaling; the returned function stops streaming and detaches. */
+  /** Starts listening for signaling and agent acks; the returned function stops everything. */
   attach(): () => void {
-    const off = this.conn.onSignal((m) => void this.onSignal(m));
+    const offSignal = this.conn.onSignal((m) => void this.onSignal(m));
+    const offAck = this.bridge.onAck((pad, seq) => this.onAgentAck(pad, seq));
+    let wasPaired = this.bridge.paired;
+    const offBridge = this.bridge.subscribe(() => {
+      if (this.bridge.paired === wasPaired) return;
+      wasPaired = this.bridge.paired;
+      for (const peerId of this.peers.keys()) this.tellBridge(peerId);
+    });
     return () => {
-      off();
+      offSignal();
+      offAck();
+      offBridge();
       this.stop();
     };
   }
@@ -161,6 +181,52 @@ export class HostStream {
     }
     for (const peer of this.guests) if (!online.has(peer)) this.closePeer(peer);
     this.guests = online;
+
+    // Slot changes: release the old virtual pad so nothing stays held, and tell the guest.
+    const slots = new Map<string, Slot>();
+    for (const m of room.members) if (!m.host && m.online && m.slot !== null) slots.set(m.peer, m.slot);
+    for (const [peer, slot] of this.slots) {
+      if (slots.get(peer) !== slot) this.bridge.release(slot);
+    }
+    const changed = [...new Set([...this.slots.keys(), ...slots.keys()])].filter(
+      (p) => this.slots.get(p) !== slots.get(p),
+    );
+    this.slots = slots;
+    for (const peer of changed) this.tellBridge(peer);
+  }
+
+  /** Forwards one guest input message to the agent, if it is valid and the guest has a slot. */
+  private onInput(peerId: string, raw: unknown): void {
+    if (typeof raw !== "string" || raw.length > 512) return;
+    let parsed;
+    try {
+      parsed = GuestInput.safeParse(JSON.parse(raw));
+    } catch {
+      return;
+    }
+    if (!parsed.success || !this.bridge.paired) return;
+    const slot = this.slots.get(peerId);
+    if (!slot) return;
+    const { seq, ts, t: _t, ...state } = parsed.data;
+    this.pending.set(`${slot}:${seq}`, { peer: peerId, ts, at: performance.now() });
+    this.bridge.sendPad(slot, seq, state);
+  }
+
+  private onAgentAck(pad: Slot, seq: number): void {
+    const key = `${pad}:${seq}`;
+    const entry = this.pending.get(key);
+    if (!entry) return;
+    this.pending.delete(key);
+    this.sendToGuest(entry.peer, { t: "ack", seq, ts: entry.ts });
+  }
+
+  private tellBridge(peerId: string): void {
+    this.sendToGuest(peerId, { t: "bridge", ok: this.bridge.paired, pad: this.slots.get(peerId) ?? null });
+  }
+
+  private sendToGuest(peerId: string, msg: HostToGuest): void {
+    const dc = this.peers.get(peerId)?.input;
+    if (dc?.readyState === "open") dc.send(JSON.stringify(msg));
   }
 
   private sourceHeight(): number | undefined {
@@ -174,7 +240,10 @@ export class HostStream {
     if (!stream || !this.ice) return;
     this.closePeer(peerId);
     const pc = new RTCPeerConnection({ iceServers: this.ice.servers });
-    const peer: Peer = { pc, createdAt: Date.now(), pendingIce: [], sample: null };
+    const input = pc.createDataChannel("input", { ordered: false, maxRetransmits: 0 });
+    input.onopen = () => this.tellBridge(peerId);
+    input.onmessage = (e) => this.onInput(peerId, e.data);
+    const peer: Peer = { pc, input, createdAt: Date.now(), pendingIce: [], sample: null };
     this.peers.set(peerId, peer);
     this.setPeer(peerId, { phase: "connecting", stats: null });
 
@@ -236,11 +305,15 @@ export class HostStream {
     clearTimeout(peer.retry);
     peer.pc.close();
     this.peers.delete(peerId);
+    const slot = this.slots.get(peerId);
+    if (slot) this.bridge.release(slot);
     const { [peerId]: _, ...rest } = this.snap.peers;
     this.update({ peers: rest });
   }
 
   private async sampleStats(): Promise<void> {
+    const now = performance.now();
+    for (const [key, p] of this.pending) if (now - p.at > PENDING_INPUT_MS) this.pending.delete(key);
     for (const [peerId, peer] of this.peers) {
       try {
         const { stats, sample } = await hostStats(peer.pc, peer.sample);

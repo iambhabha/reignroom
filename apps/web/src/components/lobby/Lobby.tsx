@@ -59,7 +59,7 @@ export function Lobby({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,24rem)]">
         <div className="flex flex-col gap-6">
-          {isHost ? <HostPanel conn={conn} room={room} /> : <GuestPanel conn={conn} room={room} />}
+          {isHost ? <HostPanel conn={conn} room={room} /> : <GuestPanel conn={conn} room={room} me={me} />}
           <SlotList conn={conn} room={room} me={me} isHost={isHost} />
           {isHost && (
             <section aria-labelledby="room-settings" className="flex flex-col gap-3">

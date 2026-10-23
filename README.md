@@ -63,3 +63,10 @@ credentials (such as ExpressTURN) the fallback. The settings are listed in
 
 The **Test pattern** source checks guest video without PCSX2. For the two-network test, follow
 [docs/testing-across-networks.md](docs/testing-across-networks.md).
+
+## Controllers (host agent)
+
+Guests' controllers reach the game through the **host agent** (`agent/`), a small Windows
+program that creates virtual controllers for PCSX2 and checks that PCSX2 is running Urban Reign.
+See [agent/README.md](agent/README.md). Guests need nothing installed: a controller (or the
+keyboard) in the browser is enough, and the room page has a controller test screen.

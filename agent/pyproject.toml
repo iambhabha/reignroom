@@ -1,0 +1,19 @@
+[project]
+name = "reignroom-agent"
+version = "0.1.0"
+description = "ReignRoom host agent: guests' controller input as virtual pads for PCSX2 (Urban Reign)."
+requires-python = ">=3.12"
+dependencies = [
+  "websockets==17.3",
+  "vgamepad==0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==9.1.1",
+  "pyinstaller==6.22.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

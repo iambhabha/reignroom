@@ -1,4 +1,4 @@
-import type { RoomState } from "@reignroom/protocol";
+import { HostToGuest, NEUTRAL, type GuestInput, type PadState, type RoomState, type Slot } from "@reignroom/protocol";
 import type { RoomConnection, SignalMsg } from "../room-connection.ts";
 import { fetchIce, type IceConfig } from "./ice.ts";
 import { guestStats, type GuestStats } from "./stats.ts";
@@ -11,6 +11,12 @@ export interface GuestSnapshot {
   stream: MediaStream | null;
   stats: GuestStats | null;
   relay: IceConfig["relay"] | null;
+  /** Input channel to the host is open. */
+  inputOpen: boolean;
+  /** Host's agent is connected, and which player this guest controls. */
+  bridge: { ok: boolean; pad: Slot | null } | null;
+  /** Median time from sending input to the host's agent confirming it was applied. */
+  inputRttMs: number | null;
 }
 
 /** Recovery thresholds: ask the host for a fresh offer only on clear evidence of trouble. */
@@ -19,6 +25,9 @@ const DISCONNECTED_MS = 3000; // ICE "disconnected" that doesn't recover
 const FIRST_FRAME_MS = 10_000; // offer received but no picture at all
 const ASK_INTERVAL_MS = 5000;
 const ICE_REFRESH_MS = 50 * 60 * 1000;
+/** Full state is re-sent this often even without changes, so a lost packet heals quickly. */
+const RESEND_MS = 100;
+const RTT_SAMPLES = 30;
 
 /**
  * Guest side of the stream: answers the host's offers, plays the video, and asks for a
@@ -39,7 +48,21 @@ export class GuestStream {
   private lastProgress = 0;
   private lastFrames = 0;
   private lastAsk = 0;
-  private snap: GuestSnapshot = { phase: "idle", stream: null, stats: null, relay: null };
+  private input: RTCDataChannel | null = null;
+  private inputState: PadState = NEUTRAL;
+  private seq = 0;
+  private lastSent = 0;
+  private resend: ReturnType<typeof setInterval> | undefined;
+  private rtts: number[] = [];
+  private snap: GuestSnapshot = {
+    phase: "idle",
+    stream: null,
+    stats: null,
+    relay: null,
+    inputOpen: false,
+    bridge: null,
+    inputRttMs: null,
+  };
 
   constructor(
     private readonly conn: RoomConnection,
@@ -56,9 +79,13 @@ export class GuestStream {
   attach(): () => void {
     const off = this.conn.onSignal((m) => void this.onSignal(m));
     this.timer = setInterval(() => void this.tick(), 1000);
+    this.resend = setInterval(() => {
+      if (performance.now() - this.lastSent >= RESEND_MS) this.sendInput();
+    }, RESEND_MS);
     return () => {
       off();
       clearInterval(this.timer);
+      clearInterval(this.resend);
       this.live = false;
       this.closePc();
       this.update({ phase: "idle", stream: null, stats: null });
@@ -128,6 +155,22 @@ export class GuestStream {
     pc.onicecandidate = (e) => {
       if (this.host) this.conn.send({ t: "ice", to: this.host, cand: candidateToWire(e.candidate) });
     };
+    pc.ondatachannel = (e) => {
+      if (e.channel.label !== "input" || this.pc !== pc) return;
+      const dc = e.channel;
+      this.input = dc;
+      dc.onopen = () => {
+        this.update({ inputOpen: true });
+        this.sendInput();
+      };
+      dc.onclose = () => {
+        if (this.input === dc) {
+          this.input = null;
+          this.update({ inputOpen: false, bridge: null });
+        }
+      };
+      dc.onmessage = (m) => this.onHostMessage(m.data);
+    };
     pc.onconnectionstatechange = () => {
       if (this.pc !== pc) return;
       this.disconnectedSince = pc.connectionState === "disconnected" ? Date.now() : null;
@@ -143,6 +186,44 @@ export class GuestStream {
     if (this.host && this.pc === pc) {
       this.conn.send({ t: "sdp", to: this.host, kind: "answer", sdp: pc.localDescription!.sdp });
     }
+  }
+
+  /** Latest controller state; sent at once if it changed. */
+  setInput(state: PadState): void {
+    this.inputState = state;
+    this.sendInput();
+  }
+
+  private sendInput(): void {
+    const dc = this.input;
+    if (!dc || dc.readyState !== "open" || !this.snap.bridge?.pad) return;
+    this.seq = (this.seq + 1) >>> 0;
+    const msg: GuestInput = { t: "in", seq: this.seq, ts: performance.now(), ...this.inputState };
+    dc.send(JSON.stringify(msg));
+    this.lastSent = performance.now();
+  }
+
+  private onHostMessage(raw: unknown): void {
+    if (typeof raw !== "string") return;
+    let parsed;
+    try {
+      parsed = HostToGuest.safeParse(JSON.parse(raw));
+    } catch {
+      return;
+    }
+    if (!parsed.success) return;
+    const msg = parsed.data;
+    if (msg.t === "bridge") {
+      this.update({ bridge: { ok: msg.ok, pad: msg.pad } });
+      if (!msg.pad) this.update({ inputRttMs: null });
+      return;
+    }
+    const rtt = performance.now() - msg.ts;
+    if (rtt < 0 || rtt > 5000) return;
+    this.rtts.push(rtt);
+    if (this.rtts.length > RTT_SAMPLES) this.rtts.shift();
+    const sorted = [...this.rtts].sort((a, b) => a - b);
+    this.update({ inputRttMs: Math.round(sorted[Math.floor(sorted.length / 2)]!) });
   }
 
   /** Once a second: refresh stats and recover from a missing, broken or frozen picture. */
@@ -182,6 +263,9 @@ export class GuestStream {
   private closePc(): void {
     this.pc?.close();
     this.pc = null;
+    this.input = null;
+    this.rtts = [];
+    if (this.snap.inputOpen || this.snap.bridge) this.update({ inputOpen: false, bridge: null, inputRttMs: null });
   }
 
   private update(patch: Partial<GuestSnapshot>): void {

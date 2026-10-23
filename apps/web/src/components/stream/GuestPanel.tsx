@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RoomState } from "@reignroom/protocol";
+import { Controller } from "../../lib/input/controller.ts";
 import { GuestStream } from "../../lib/rtc/guest.ts";
 import type { RoomConnection } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
+import { ControllerTest } from "../input/ControllerTest.tsx";
 import { fps, routeLabel, rttLabel, size } from "./format.ts";
 
-export function GuestPanel({ conn, room }: { conn: RoomConnection; room: RoomState }) {
+export function GuestPanel({ conn, room, me }: { conn: RoomConnection; room: RoomState; me: string }) {
   const [stream] = useState(() => new GuestStream(conn, room.code));
   const snap = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
+  const [controller] = useState(() => new Controller());
+  const pad = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const [testOpen, setTestOpen] = useState(!room.live);
   const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(false);
@@ -15,6 +20,8 @@ export function GuestPanel({ conn, room }: { conn: RoomConnection; room: RoomSta
 
   useEffect(() => stream.attach(), [stream]);
   useEffect(() => stream.syncRoom(room), [stream, room]);
+  useEffect(() => controller.attach(), [controller]);
+  useEffect(() => stream.setInput(pad.state), [stream, pad.state]);
 
   // Attach the stream and start playback. Browsers may refuse sound without a recent
   // click; then play muted and offer an Unmute button.
@@ -76,7 +83,7 @@ export function GuestPanel({ conn, room }: { conn: RoomConnection; room: RoomSta
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <StatsLine stats={snap.stats} playing={snap.phase === "playing"} />
+        <StatsLine stats={snap.stats} playing={snap.phase === "playing"} inputRttMs={snap.inputRttMs} />
         <div className="flex gap-2">
           {hasAudio && muted && (
             <Button
@@ -97,21 +104,46 @@ export function GuestPanel({ conn, room }: { conn: RoomConnection; room: RoomSta
           </Button>
         </div>
       </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm">
+            <span className="font-semibold">Controller: </span>
+            {controlStatus(room, me, snap)}
+          </p>
+          <Button size="sm" variant="quiet" aria-expanded={testOpen} onClick={() => setTestOpen((v) => !v)}>
+            {testOpen ? "Hide controller test" : "Test controller"}
+          </Button>
+        </div>
+        {testOpen && <ControllerTest snap={pad} />}
+      </div>
     </section>
   );
+}
+
+function controlStatus(room: RoomState, me: string, snap: ReturnType<GuestStream["getSnapshot"]>): string {
+  const slot = room.members.find((m) => m.peer === me)?.slot ?? null;
+  if (slot === null) return "take a player slot to control a character.";
+  if (!room.live) return `you'll control P${slot} once the host starts streaming.`;
+  if (!snap.inputOpen || !snap.bridge) return `connecting your input as P${slot}…`;
+  if (!snap.bridge.ok) return `you're P${slot}, but the host's controller bridge isn't connected yet, so your input can't reach the game.`;
+  return `you control P${snap.bridge.pad ?? slot} in the game.`;
 }
 
 function StatsLine({
   stats,
   playing,
+  inputRttMs,
 }: {
   stats: ReturnType<GuestStream["getSnapshot"]>["stats"];
   playing: boolean;
+  inputRttMs: number | null;
 }) {
   if (!playing || !stats) return <p className="text-sm text-muted">No picture yet.</p>;
   return (
     <dl className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-      <Stat label="Round trip" value={rttLabel(stats.rttMs)} />
+      <Stat label="Input round trip" value={inputRttMs === null ? "—" : rttLabel(inputRttMs)} />
+      <Stat label="Network round trip" value={rttLabel(stats.rttMs)} />
       <Stat label="Video" value={`${size(stats.width, stats.height)} · ${fps(stats.fps)}`} />
       <Stat label="Buffer" value={stats.bufferMs === null ? "—" : `${stats.bufferMs} ms`} />
       <Stat label="Route" value={routeLabel(stats.route)} />
