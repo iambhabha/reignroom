@@ -1,0 +1,112 @@
+# Builds the host agent from source and publishes it as a GitHub Release.
+#
+# Trigger: push a tag agent-vX.Y.Z matching agent/reignroom_agent/__init__.py, or run manually
+# (manual runs only upload a workflow artifact, no release).
+# Needs the repository variable REIGNROOM_SITE_ORIGIN, e.g. https://reignroom.<you>.workers.dev
+name: Agent release
+
+on:
+  push:
+    tags: ["agent-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the release
+  id-token: write # build provenance attestation
+  attestations: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: agent
+    env:
+      SITE_ORIGIN: ${{ vars.REIGNROOM_SITE_ORIGIN }}
+      VGAMEPAD_SKIP_VIGEMBUS_INSTALL: "true"
+      # Compile PyInstaller's bootloader here instead of using the shared pre-built one, which
+      # PyInstaller's docs name as a cause of antivirus false positives.
+      PYINSTALLER_COMPILE_BOOTLOADER: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Check settings
+        run: |
+          if ($env:SITE_ORIGIN -notmatch '^https://[a-z0-9.-]+(:\d+)?$') {
+            throw "Set the repository variable REIGNROOM_SITE_ORIGIN to the deployed site, e.g. https://reignroom.<you>.workers.dev"
+          }
+          $version = (Select-String -Path reignroom_agent/__init__.py -Pattern '__version__ = "(.+)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "agent-v$version") {
+            throw "Tag $env:GITHUB_REF_NAME doesn't match agent version $version"
+          }
+          "VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Install (PyInstaller with bootloader built from source)
+        run: python -m pip install --no-binary pyinstaller pyinstaller==6.22.3 websockets==17.3 vgamepad==0.1.0 pytest==9.1.1
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Build (one folder)
+        run: |
+          Set-Content -Path reignroom_agent/site_origin.txt -Value $env:SITE_ORIGIN -Encoding ascii -NoNewline
+          pyinstaller --clean --noconfirm reignroom-agent.spec
+
+      - name: Package and hash
+        run: |
+          $zip = "reignroom-agent-$env:VERSION-windows-x64.zip"
+          Compress-Archive -Path dist/reignroom-agent -DestinationPath $zip
+          $exeHash = (Get-FileHash dist/reignroom-agent/reignroom-agent.exe -Algorithm SHA256).Hash.ToLower()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          @(
+            "$zipHash  $zip",
+            "$exeHash  reignroom-agent/reignroom-agent.exe"
+          ) | Set-Content -Path SHA256SUMS.txt -Encoding ascii
+          "ZIP=$zip" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "ZIP_SHA256=$zipHash" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "EXE_SHA256=$exeHash" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            agent/${{ env.ZIP }}
+            agent/dist/reignroom-agent/reignroom-agent.exe
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: reignroom-agent-${{ env.VERSION }}
+          path: |
+            agent/${{ env.ZIP }}
+            agent/SHA256SUMS.txt
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          $notes = @"
+          ReignRoom host agent $env:VERSION for Windows 10/11 (64-bit), for Urban Reign in PCSX2.
+
+          Built from this repository's source by [this workflow run]($env:RUN_URL), with PyInstaller's bootloader compiled from source. Build provenance is attested (``gh attestation verify <file> --repo $env:GITHUB_REPOSITORY``).
+
+          **SHA-256**
+          - ``$env:ZIP``: ``$env:ZIP_SHA256``
+          - ``reignroom-agent.exe`` (inside the zip): ``$env:EXE_SHA256``
+
+          Check on your PC (PowerShell): ``Get-FileHash .\$env:ZIP -Algorithm SHA256``
+
+          The program isn't code-signed, so Windows SmartScreen may show "Windows protected your PC". Choose **More info**, check the app name is ``reignroom-agent.exe``, then **Run anyway**. See the host setup guide on the site.
+
+          It only accepts connections from $env:SITE_ORIGIN, on 127.0.0.1. Requires ViGEmBus 1.22.0.
+
+          ReignRoom never provides game or BIOS files. Fan project, not affiliated with Bandai Namco or Sony.
+          "@
+          gh release create $env:GITHUB_REF_NAME $env:ZIP SHA256SUMS.txt --title "Agent $env:VERSION" --notes $notes

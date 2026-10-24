@@ -67,7 +67,7 @@ function StateTag({ state }: { state: BridgeSnapshot["state"] }) {
 function explain(snap: BridgeSnapshot): string {
   switch (snap.state) {
     case "off":
-      return "Run the ReignRoom agent on this computer. It turns your guests' controllers into virtual controllers for PCSX2. Paste the pairing token it shows.";
+      return "Run the ReignRoom agent on this computer (see Host setup). It turns your guests' controllers into virtual controllers for PCSX2. Paste the pairing token it shows.";
     case "connecting":
       return "Looking for the agent on this computer…";
     case "paired":

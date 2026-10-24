@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import os
 import secrets
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,13 +19,7 @@ from .detect import PINE_DEFAULT_SLOT, PineClient, detect
 from .pads import MemoryBackend, PadBackend, ViGEmBackend
 from .protocol import AGENT_PORT, TOKEN_RE
 from .server import Agent
-
-#: Pages allowed to connect. The deployed site's address is added at release time.
-DEFAULT_ORIGINS = [
-    "http://localhost:8787",
-    "http://127.0.0.1:8787",
-    "http://localhost:5173",
-]
+from .site import DEV_ORIGINS, release_origin
 
 BANNER = """\
 ================================================================================
@@ -58,9 +53,31 @@ def load_or_create_token(renew: bool) -> str:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(token, encoding="ascii")
+        restrict_to_current_user(path)
     except OSError:
         pass  # Still usable for this run.
     return token
+
+
+def restrict_to_current_user(path: Path) -> None:
+    """Drop inherited permissions: only this Windows account and SYSTEM may read the token.
+
+    %LOCALAPPDATA% is already private to the user; this makes the file itself explicit about it.
+    """
+    if sys.platform != "win32":
+        os.chmod(path, 0o600)
+        return
+    user = os.environ.get("USERNAME")
+    domain = os.environ.get("USERDOMAIN")
+    if not user:
+        return
+    account = domain + "\\" + user if domain else user
+    subprocess.run(
+        ["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:F", "*S-1-5-18:F"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
                              "the host plays P1 on their own controller)")
     parser.add_argument("--dry-run", action="store_true",
                         help="don't create virtual controllers; print received input instead")
+    parser.add_argument("--dev", action="store_true",
+                        help="also allow local development sites (localhost:8787, localhost:5173)")
     parser.add_argument("--allow-origin", action="append", default=[], metavar="ORIGIN",
                         help="extra site address allowed to connect, e.g. https://*.trycloudflare.com")
     parser.add_argument("--pine-slot", type=int, default=PINE_DEFAULT_SLOT,
@@ -88,6 +107,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--pads takes slot numbers 1-4, e.g. 2,3,4")
 
     print(BANNER.format(version=__version__))
+
+    site = release_origin()
+    origins = ([site] if site else []) + (DEV_ORIGINS if args.dev else []) + args.allow_origin
+    if not origins:
+        print(" ERROR: this build doesn't know the ReignRoom site address. Download the agent from the")
+        print("        project's GitHub Releases, or run with --dev for local development.")
+        return 2
 
     backend: PadBackend
     pad_error = None
@@ -113,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     print(" Paste it into the host page under 'Controller bridge' (only needed once per")
     print(" browser; it stays the same next time). Keep this window open while playing.")
     print(f" Listening on 127.0.0.1:{AGENT_PORT} (this computer only). Ctrl+C to quit.")
+    print(f" Accepting the site: {', '.join(origins)}")
     print("--------------------------------------------------------------------------------")
 
     pine = PineClient(args.pine_slot)
@@ -120,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         token=token,
         backend=backend,
         detector=lambda: detect(pine),
-        allowed_origins=DEFAULT_ORIGINS + args.allow_origin,
+        allowed_origins=origins,
         pad_error=pad_error,
         log=lambda m: print(f" {m}", flush=True),
     )

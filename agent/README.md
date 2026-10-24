@@ -18,15 +18,18 @@ tells the host page whether PCSX2 is running Urban Reign.
 
 ## Run
 
-Download `reignroom-agent.exe` from the project's GitHub Releases and run it. It prints a
-**pairing token**; paste it once into the host page under **Controller bridge**. The token is
-kept in `%LOCALAPPDATA%\ReignRoom\agent-token.txt`, so it stays the same next time
+Download `reignroom-agent-<version>-windows-x64.zip` from the project's GitHub Releases, check its
+SHA-256 (on the release page and the site's host guide), unzip it, and run `reignroom-agent.exe`
+from that folder. It prints a **pairing token**; paste it once into the host page under
+**Controller bridge**. The token is kept in `%LOCALAPPDATA%\ReignRoom\agent-token.txt` (your
+own profile), readable only by your Windows account and SYSTEM, so it stays the same next time
 (`--new-token` makes a new one).
 
 ```text
 reignroom-agent.exe                 virtual controllers for P2, P3, P4 (host plays P1)
 reignroom-agent.exe --pads 1,2,3,4  also a virtual P1
 reignroom-agent.exe --dry-run       no driver needed; prints the input it receives
+reignroom-agent.exe --dev           also accept local development sites (localhost)
 ```
 
 The controllers are created in slot order (P2 first), which is the order Windows and PCSX2 list
@@ -35,8 +38,9 @@ them in.
 ## What it accepts (security)
 
 - Listens on `127.0.0.1:47823` only, never on the network.
-- Only pages from the ReignRoom site may connect (browser `Origin` check), and the first message
-  must carry the pairing token. Five wrong tokens lock it for 30 seconds.
+- Only pages from the ReignRoom site may connect (browser `Origin` check). A release build accepts
+  exactly one site, written into it by the release workflow; localhost only with `--dev`.
+- The first message must carry the pairing token. Five wrong tokens lock it for 30 seconds.
 - After that it accepts exactly two messages: `pad` (one controller's buttons, sticks and
   triggers, every value range-checked) and `release`. Nothing else, no other commands.
 - At most 120 messages per second per controller; extra ones are dropped.
@@ -49,10 +53,13 @@ them in.
 py -3.14 -m venv .venv
 .venv\Scripts\python -m pip install -e .[dev]
 .venv\Scripts\python -m pytest
-.venv\Scripts\python -m reignroom_agent --dry-run
+.venv\Scripts\python -m reignroom_agent --dev --dry-run
 .venv\Scripts\python tools\test_client.py --token <token>
 .venv\Scripts\pyinstaller --clean --noconfirm reignroom-agent.spec
 ```
+
+The build is a folder, `dist\reignroom-agent\` (one-folder mode). Releases are built by
+`.github/workflows/agent-release.yml` with PyInstaller's bootloader compiled from source.
 
 Python 3.14 is verified: vgamepad 0.1.0 creates controllers through ViGEmBus, websockets 17.3
 and PyInstaller 6.22.3 both support it, and the built `.exe` was run end to end.

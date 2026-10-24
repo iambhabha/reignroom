@@ -64,6 +64,13 @@ credentials (such as ExpressTURN) the fallback. The settings are listed in
 The **Test pattern** source checks guest video without PCSX2. For the two-network test, follow
 [docs/testing-across-networks.md](docs/testing-across-networks.md).
 
+## Deploying
+
+Free tiers only (one Cloudflare Worker + GitHub Actions/Releases). Step by step:
+[docs/deploy.md](docs/deploy.md). Before calling a deployment done, run
+[docs/testing-across-networks.md](docs/testing-across-networks.md) and
+[docs/real-game-test.md](docs/real-game-test.md).
+
 ## Controllers (host agent)
 
 Guests' controllers reach the game through the **host agent** (`agent/`), a small Windows

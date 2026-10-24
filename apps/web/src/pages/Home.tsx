@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   DEFAULT_PLAYERS,
   NAME_MAX,
@@ -151,7 +151,10 @@ export function Home() {
           <div>
             <h2 className="font-display text-2xl font-bold uppercase">Host a room</h2>
             <p className="mt-1 text-muted">
-              You need a Windows PC with PCSX2 and your own Urban Reign disc image.
+              You need a Windows PC with PCSX2 and your own Urban Reign disc image.{" "}
+              <Link to="/host" className="font-semibold text-accent-text underline underline-offset-4">
+                Host setup guide
+              </Link>
             </p>
           </div>
           <Segmented
