@@ -73,9 +73,22 @@ export function EmulatorScreen({
         {snap.phase !== "running" && (
           <div className="absolute inset-0 grid place-content-center gap-3 p-6 text-center">
             {snap.phase === "error" ? (
-              <p role="alert" className="max-w-md font-medium text-danger">
-                {snap.error}
-              </p>
+              <div className="flex flex-col items-center gap-3">
+                <p role="alert" className="max-w-md font-medium text-danger">
+                  {snap.error}
+                </p>
+                {!globalThis.crossOriginIsolated && (
+                  <>
+                    <Button variant="primary" onClick={() => location.reload()}>
+                      Reload page
+                    </Button>
+                    <p className="max-w-sm text-sm text-white/70">
+                      If this keeps showing, open the site in Chrome or Edge, in a normal window (not inside another
+                      app).
+                    </p>
+                  </>
+                )}
+              </div>
             ) : snap.phase !== "ready" ? (
               <p role="status" className="text-muted">
                 Starting the emulator…

@@ -93,7 +93,11 @@ export class BrowserEmulator {
   async load(): Promise<void> {
     if (this.snap.phase !== "idle") return;
     if (!globalThis.crossOriginIsolated) {
-      this.update({ phase: "error", error: "This page isn't cross-origin isolated, so the emulator can't use threads." });
+      // Usually a page loaded before the site turned isolation on, or served from the cache.
+      this.update({
+        phase: "error",
+        error: "This tab was opened in a way that can't run the emulator. Reload the page to fix it.",
+      });
       return;
     }
     this.update({ phase: "loading" });
