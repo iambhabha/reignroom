@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { browserEmulator, toPlayPad } from "../../lib/emu/emulator.ts";
 import { Controller } from "../../lib/input/controller.ts";
+import type { NetplayLink } from "../../lib/netplay/room-link.ts";
 import { NetplaySession, type NetplaySnapshot } from "../../lib/netplay/session.ts";
 import { Button } from "../Button.tsx";
 import { EmulatorScreen } from "./EmulatorScreen.tsx";
 
 /**
  * Netplay for one side: this player's own emulator, their disc, and the match with the other
- * player over `channel` (null until the other player is connected). Host = P1, guest = P2.
+ * player over `link` (null while there's no other player). Host = P1, guest = P2.
  */
 export function NetplayView({
   role,
-  channel,
+  link,
   peerName,
 }: {
   role: "host" | "guest";
-  channel: RTCDataChannel | null;
+  link: NetplayLink | null;
   peerName: string | null;
 }) {
   const [emulator] = useState(() => browserEmulator());
@@ -26,14 +27,14 @@ export function NetplayView({
   useEffect(() => controller.attach(), [controller]);
 
   useEffect(() => {
-    if (!channel) {
+    if (!link) {
       setSession(null);
       return;
     }
-    const s = new NetplaySession(role, channel, emulator, () => toPlayPad(controller.getSnapshot().state));
+    const s = new NetplaySession(role, link, emulator, () => toPlayPad(controller.getSnapshot().state));
     setSession(s);
     return s.attach();
-  }, [channel, role, emulator, controller]);
+  }, [link, role, emulator, controller]);
 
   useEffect(() => {
     if (session && file) void session.setDisc(file);
@@ -55,11 +56,6 @@ export function NetplayView({
             only controller input goes between you and {other}.
           </p>
           {snap?.phase === "running" && <MatchStats snap={snap} />}
-          {snap?.phase === "ended" && (
-            <p role="alert" className="text-sm font-medium text-danger">
-              {snap.error} Reload the page to play again.
-            </p>
-          )}
         </div>
       }
     />
@@ -86,11 +82,8 @@ function Waiting({
 }) {
   let status: string;
   let tone = "text-white/80";
-  if (!session || !snap || snap.phase === "connecting") status = `Waiting for ${other} to connect…`;
-  else if (snap.phase === "ended") {
-    status = snap.error ?? "The match ended.";
-    tone = "text-danger";
-  } else if (!snap.myDisc) status = "Checking your disc…";
+  if (!session || !snap || !snap.peerReady) status = `Waiting for ${other} to open netplay…`;
+  else if (!snap.myDisc) status = "Checking your disc…";
   else if (!snap.peerDisc) status = `Waiting for ${other} to choose their disc…`;
   else if (!session.discsMatch) {
     status = `${other}'s disc (${snap.peerDisc.name}) isn't the same as yours. Both players need the same version of the game, in the same file format.`;
@@ -103,7 +96,7 @@ function Waiting({
       <p className="font-display text-lg font-bold uppercase">Your disc: {file.name}</p>
       <p className={`text-sm ${tone}`}>{status}</p>
       {snap?.rttMs != null && <p className="text-sm text-white/70">Ping {snap.rttMs} ms</p>}
-      {snap?.error && snap.phase !== "ended" && (
+      {snap?.error && (
         <p role="alert" className="text-sm font-medium text-danger">
           {snap.error}
         </p>

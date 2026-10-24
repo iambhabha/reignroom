@@ -8,6 +8,7 @@ import { hostStats, type HostPeerStats } from "./stats.ts";
 import { startTestPattern } from "./test-pattern.ts";
 import { applyQuality, encodingFor, preferCodecs } from "./tuning.ts";
 
+/** "netplay" never streams: it is handled outside HostStream, over the room's relay. */
 export type Source = "window" | "screen" | "test" | "emulator" | "netplay";
 
 export type PeerPhase = "connecting" | "connected" | "failed";
@@ -17,14 +18,12 @@ export interface HostSnapshot {
   starting: boolean;
   source: Source | null;
   /** What the person actually picked in the browser's share dialog. */
-  surface: "monitor" | "window" | "browser" | "test" | "emulator" | "netplay" | null;
+  surface: "monitor" | "window" | "browser" | "test" | "emulator" | null;
   hasAudio: boolean;
   quality: Quality;
   preview: MediaStream | null;
   error: string | null;
   peers: Record<string, { phase: PeerPhase; stats: HostPeerStats | null }>;
-  /** Netplay source: each guest's "netplay" data channel, by peer id. */
-  netplay: Record<string, RTCDataChannel>;
 }
 
 interface Peer {
@@ -71,7 +70,6 @@ export class HostStream {
     preview: null,
     error: null,
     peers: {},
-    netplay: {},
   };
 
   constructor(
@@ -105,7 +103,7 @@ export class HostStream {
   getSnapshot = () => this.snap;
 
   /** `given` is the stream for the "emulator" source (the in-browser emulator's canvas). */
-  async start(source: Source, given?: MediaStream): Promise<void> {
+  async start(source: Exclude<Source, "netplay">, given?: MediaStream): Promise<void> {
     if (this.snap.live || this.snap.starting) return;
     this.update({ starting: true, error: null });
     let stream: MediaStream;
@@ -114,10 +112,6 @@ export class HostStream {
         const pattern = startTestPattern();
         stream = pattern.stream;
         this.stopSource = pattern.stop;
-      } else if (source === "netplay") {
-        // No media: both players run the game themselves; only input crosses the network.
-        stream = new MediaStream();
-        this.stopSource = null;
       } else if (source === "emulator") {
         if (!given) throw new Error("no emulator stream");
         stream = given;
@@ -134,21 +128,19 @@ export class HostStream {
     this.ice = await fetchIce(this.code);
 
     const video = stream.getVideoTracks()[0];
-    if (!video && source !== "netplay") {
+    if (!video) {
       this.stopSource?.();
       this.update({ starting: false, error: "No video was shared. Try again and pick the PCSX2 window." });
       return;
     }
-    if (video) {
-      video.contentHint = "motion";
-      // The person pressed the browser's own "Stop sharing" button.
-      video.addEventListener("ended", () => this.stop());
-    }
+    video.contentHint = "motion";
+    // The person pressed the browser's own "Stop sharing" button.
+    video.addEventListener("ended", () => this.stop());
 
     const surface =
-      source === "test" || source === "emulator" || source === "netplay"
+      source === "test" || source === "emulator"
         ? source
-        : ((video?.getSettings().displaySurface as HostSnapshot["surface"]) ?? null);
+        : ((video.getSettings().displaySurface as HostSnapshot["surface"]) ?? null);
     this.update({
       live: true,
       starting: false,
@@ -173,7 +165,7 @@ export class HostStream {
     this.stopSource?.();
     this.stopSource = null;
     this.conn.send({ t: "stream", live: false });
-    this.update({ live: false, source: null, surface: null, hasAudio: false, preview: null, peers: {}, netplay: {} });
+    this.update({ live: false, source: null, surface: null, hasAudio: false, preview: null, peers: {} });
   }
 
   setQuality(quality: Quality): void {
@@ -263,10 +255,6 @@ export class HostStream {
     input.onmessage = (e) => this.onInput(peerId, e.data);
     const peer: Peer = { pc, input, createdAt: Date.now(), pendingIce: [], sample: null };
     this.peers.set(peerId, peer);
-    if (this.snap.source === "netplay") {
-      const netplay = pc.createDataChannel("netplay", { ordered: true });
-      this.update({ netplay: { ...this.snap.netplay, [peerId]: netplay } });
-    }
     this.setPeer(peerId, { phase: "connecting", stats: null });
 
     const height = this.sourceHeight();
@@ -330,8 +318,7 @@ export class HostStream {
     const slot = this.slots.get(peerId);
     if (slot) this.bridge.release(slot);
     const { [peerId]: _, ...rest } = this.snap.peers;
-    const { [peerId]: _np, ...netplay } = this.snap.netplay;
-    this.update({ peers: rest, netplay });
+    this.update({ peers: rest });
   }
 
   private async sampleStats(): Promise<void> {

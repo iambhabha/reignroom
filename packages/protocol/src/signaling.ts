@@ -29,6 +29,8 @@ const ChatText = z.string().min(1).max(CHAT_MAX * 4);
 
 /** Generous upper bound; real offers with H.264 + VP8 are ~5–10 KB. */
 const SDP_MAX = 40_000;
+/** Longest netplay relay message, in characters. */
+export const NETPLAY_RELAY_MAX = 1024;
 
 const IceCandidate = z.strictObject({
   candidate: z.string().max(1024),
@@ -71,6 +73,11 @@ export const ClientMsg = z.discriminatedUnion("t", [
   z.strictObject({ t: z.literal("ice"), to: PeerId, cand: IceCandidate.nullable() }),
   /** Guest → host: "send me a fresh offer" (after a reload or a failed connection). */
   z.strictObject({ t: z.literal("want-offer"), to: PeerId }),
+  /**
+   * Netplay data (a JSON array of NetplayMsg), relayed by the room between the host and one
+   * guest. Going through the room means netplay works on any network, with no TURN relay.
+   */
+  z.strictObject({ t: z.literal("np"), to: PeerId, d: z.string().min(2).max(NETPLAY_RELAY_MAX) }),
 ]);
 export type ClientMsg = z.infer<typeof ClientMsg>;
 
@@ -146,6 +153,7 @@ export const ServerMsg = z.discriminatedUnion("t", [
   }),
   z.strictObject({ t: z.literal("ice"), from: PeerId, cand: IceCandidate.nullable() }),
   z.strictObject({ t: z.literal("want-offer"), from: PeerId }),
+  z.strictObject({ t: z.literal("np"), from: PeerId, d: z.string() }),
   /** Removed by the host. The socket is closed right after. */
   z.strictObject({ t: z.literal("kicked") }),
   /** `fatal: true` means the socket is closed right after. */

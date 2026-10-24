@@ -7,6 +7,11 @@ export const LIMITS = {
    * 3 × (1 offer + 10–30 candidates) in a burst, plus renegotiations later.
    */
   signal: { capacity: 200, perSecond: 50 },
+  /**
+   * Netplay relay (`np`). A player sends a bundle about every 33 ms (two frames of input),
+   * plus a ping and a memory hash each second: ~32/s. Room for catch-up bursts.
+   */
+  netplay: { capacity: 240, perSecond: 80 },
   chatMinIntervalMs: 500,
   /** Dropped messages within the window before the socket is closed. */
   strikesToClose: 50,

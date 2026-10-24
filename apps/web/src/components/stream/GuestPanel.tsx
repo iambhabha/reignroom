@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RoomState } from "@reignroom/protocol";
 import { Controller } from "../../lib/input/controller.ts";
+import { RoomNetplayLink } from "../../lib/netplay/room-link.ts";
 import { GuestStream } from "../../lib/rtc/guest.ts";
 import type { RoomConnection } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
@@ -20,6 +21,22 @@ export function GuestPanel({ conn, room, me }: { conn: RoomConnection; room: Roo
   const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => stream.attach(), [stream]);
+
+  // The host is in netplay when its netplay messages arrive (sent every second).
+  const hostPeer = room.members.find((m) => m.host)?.peer ?? null;
+  const [netplayActive, setNetplayActive] = useState(false);
+  useEffect(
+    () =>
+      conn.onNetplay((from) => {
+        if (from === hostPeer) setNetplayActive(true);
+      }),
+    [conn, hostPeer],
+  );
+  const link = useMemo(
+    () => (netplayActive && hostPeer ? new RoomNetplayLink(conn, hostPeer) : null),
+    [netplayActive, conn, hostPeer],
+  );
+  useEffect(() => () => link?.dispose(), [link]);
   useEffect(() => stream.syncRoom(room), [stream, room]);
   useEffect(() => controller.attach(), [controller]);
   useEffect(() => stream.setInput(pad.state), [stream, pad.state]);
@@ -56,14 +73,14 @@ export function GuestPanel({ conn, room, me }: { conn: RoomConnection; room: Roo
   };
 
   const mySlot = room.members.find((m) => m.peer === me)?.slot ?? null;
-  if (snap.netplay) {
+  if (netplayActive) {
     return (
       <section aria-labelledby="stream-heading" className="flex flex-col gap-3">
         <h2 id="stream-heading" className="font-display text-xl font-bold uppercase">
           Netplay
         </h2>
         {mySlot === 2 ? (
-          <NetplayView role="guest" channel={snap.netplay} peerName={host?.name ?? null} />
+          <NetplayView role="guest" link={link} peerName={host?.name ?? null} />
         ) : (
           <p className="rounded-xl border border-border bg-surface p-4">
             {host?.name ?? "The host"} is playing netplay with the guest in the P2 slot. In netplay each player runs the

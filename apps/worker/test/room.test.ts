@@ -329,6 +329,38 @@ describe("signaling relay", () => {
     expect(host.client.closed).toBeNull();
   });
 
+  it("relays netplay data between host and guest, both ways, with the sender's id", async () => {
+    const { host, guest } = await hostAndGuest();
+    const d = JSON.stringify([{ t: "ping", ts: 1 }]);
+    host.client.send({ t: "np", to: guest.welcome.peer, d });
+    expect(await guest.client.next("np")).toEqual({ t: "np", from: host.welcome.peer, d });
+    guest.client.send({ t: "np", to: host.welcome.peer, d });
+    expect(await host.client.next("np")).toEqual({ t: "np", from: guest.welcome.peer, d });
+  });
+
+  it("never relays netplay data guest to guest", async () => {
+    const { code, guest } = await hostAndGuest(3);
+    const other = await Client.join(code, "Other");
+    guest.client.send({ t: "np", to: other.welcome.peer, d: "[]" });
+    expect(await guest.client.next("error")).toMatchObject({ code: "peer_not_found", fatal: false });
+    await other.client.settle();
+    expect(other.client.of("np")).toHaveLength(0);
+  });
+
+  it("carries a netplay match's rate (both players, ~32 messages/s each) for 3 s without dropping", async () => {
+    const { host, guest } = await hostAndGuest();
+    for (let i = 0; i < 96; i++) {
+      host.client.send({ t: "np", to: guest.welcome.peer, d: `[${i}]` });
+      guest.client.send({ t: "np", to: host.welcome.peer, d: `[${i}]` });
+      if (i % 32 === 31) await host.client.settle(1000);
+    }
+    await host.client.settle(300);
+    expect(guest.client.of("np")).toHaveLength(96);
+    expect(host.client.of("np")).toHaveLength(96);
+    expect(host.client.of("error")).toHaveLength(0);
+    expect(guest.client.of("error")).toHaveLength(0);
+  });
+
   it("drops a lobby-message flood with a notice, then closes on sustained flooding", async () => {
     const { guest } = await hostAndGuest();
     for (let i = 0; i < 40; i++) guest.client.send({ t: "ready", ready: i % 2 === 0 });

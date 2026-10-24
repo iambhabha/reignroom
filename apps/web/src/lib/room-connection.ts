@@ -54,6 +54,7 @@ export class RoomConnection {
   private ws: WebSocket | null = null;
   private listeners = new Set<() => void>();
   private signalListeners = new Set<(msg: SignalMsg) => void>();
+  private netplayListeners = new Set<(from: string, data: string) => void>();
   private snap: Snapshot = {
     status: "connecting",
     peer: null,
@@ -80,6 +81,14 @@ export class RoomConnection {
   };
 
   getSnapshot = (): Snapshot => this.snap;
+
+  /** Netplay data relayed by the room from another member. */
+  onNetplay(fn: (from: string, data: string) => void): () => void {
+    this.netplayListeners.add(fn);
+    return () => {
+      this.netplayListeners.delete(fn);
+    };
+  }
 
   onSignal(fn: (msg: SignalMsg) => void): () => void {
     this.signalListeners.add(fn);
@@ -187,6 +196,9 @@ export class RoomConnection {
       case "ice":
       case "want-offer":
         for (const fn of this.signalListeners) fn(msg);
+        return;
+      case "np":
+        for (const fn of this.netplayListeners) fn(msg.from, msg.d);
         return;
     }
   }

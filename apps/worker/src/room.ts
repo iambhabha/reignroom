@@ -51,6 +51,7 @@ interface Attachment {
 interface SocketGuard {
   general: TokenBucket;
   signal: TokenBucket;
+  netplay: TokenBucket;
   lastChat: number;
   strikes: number[];
   lastNotice: number;
@@ -159,7 +160,7 @@ export class RoomDO extends DurableObject<Env> {
     const msg = parsed.data;
 
     const signaling = msg.t === "sdp" || msg.t === "ice" || msg.t === "want-offer";
-    if (!this.allow(ws, signaling ? "signal" : "general")) return;
+    if (!this.allow(ws, msg.t === "np" ? "netplay" : signaling ? "signal" : "general")) return;
 
     const peer = this.peerOf(ws);
     if (msg.t === "hello") {
@@ -191,6 +192,8 @@ export class RoomDO extends DurableObject<Env> {
       case "ice":
       case "want-offer":
         return this.onSignal(ws, seat, msg);
+      case "np":
+        return this.onNetplay(ws, seat, msg);
     }
   }
 
@@ -392,6 +395,14 @@ export class RoomDO extends DurableObject<Env> {
     }
   }
 
+  /** Relays netplay data between the host and one guest, never guest to guest. Not stored. */
+  private onNetplay(ws: WebSocket, seat: Seat, msg: Msg<"np">): void {
+    const target = this.seats.get(msg.to);
+    const [targetSocket] = target ? this.socketsOf(target.peer) : [];
+    if (!target || target.host === seat.host || !targetSocket) return this.fail(ws, "peer_not_found");
+    this.send(targetSocket, { t: "np", from: seat.peer, d: msg.d });
+  }
+
   private async onGone(ws: WebSocket): Promise<void> {
     this.guards.delete(ws);
     const meta = this.meta;
@@ -514,6 +525,7 @@ export class RoomDO extends DurableObject<Env> {
       g = {
         general: new TokenBucket(LIMITS.general.capacity, LIMITS.general.perSecond),
         signal: new TokenBucket(LIMITS.signal.capacity, LIMITS.signal.perSecond),
+        netplay: new TokenBucket(LIMITS.netplay.capacity, LIMITS.netplay.perSecond),
         lastChat: 0,
         strikes: [],
         lastNotice: 0,
@@ -524,7 +536,7 @@ export class RoomDO extends DurableObject<Env> {
   }
 
   /** Drops over-budget messages; closes the socket only on sustained flooding. */
-  private allow(ws: WebSocket, budget: "general" | "signal"): boolean {
+  private allow(ws: WebSocket, budget: "general" | "signal" | "netplay"): boolean {
     const guard = this.guard(ws);
     const now = Date.now();
     if (guard[budget].take(now)) return true;

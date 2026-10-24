@@ -1,12 +1,11 @@
 import { NETPLAY_DELAY_MAX, NETPLAY_DELAY_MIN, NETPLAY_VERSION, NetplayMsg } from "@reignroom/protocol";
 import type { BrowserEmulator, PlayPad } from "../emu/emulator.ts";
 import { delayForRtt, Lockstep } from "./lockstep.ts";
+import type { NetplayLink } from "./room-link.ts";
 
 export type NetplayPhase =
-  | "connecting" // data channel not open yet
   | "setup" // choosing discs
-  | "running"
-  | "ended"; // the other player left or the connection broke
+  | "running";
 
 export interface DiscInfo {
   id: string;
@@ -17,7 +16,7 @@ export interface NetplaySnapshot {
   phase: NetplayPhase;
   myDisc: DiscInfo | null;
   peerDisc: DiscInfo | null;
-  /** The other player sent a hello with the same netplay version. */
+  /** The other player is in netplay too (their messages arrive). */
   peerReady: boolean;
   rttMs: number | null;
   delay: number | null;
@@ -31,7 +30,7 @@ const PING_MS = 1000;
 const RTT_SAMPLES = 10;
 
 /**
- * One netplay match between the host (P1) and one guest (P2) over a "netplay" data channel.
+ * One netplay match between the host (P1) and one guest (P2), over the room's relay.
  * Both pick their own disc image; the host starts; both emulators then run in lockstep.
  */
 export class NetplaySession {
@@ -42,7 +41,7 @@ export class NetplaySession {
   private ticker: Worker | null = null;
   private rtts: number[] = [];
   private snap: NetplaySnapshot = {
-    phase: "connecting",
+    phase: "setup",
     myDisc: null,
     peerDisc: null,
     peerReady: false,
@@ -56,7 +55,7 @@ export class NetplaySession {
 
   constructor(
     readonly role: "host" | "guest",
-    private readonly channel: RTCDataChannel,
+    private readonly link: NetplayLink,
     private readonly emulator: BrowserEmulator,
     private readonly readInput: () => PlayPad,
   ) {}
@@ -70,23 +69,17 @@ export class NetplaySession {
   getSnapshot = () => this.snap;
 
   attach(): () => void {
-    const ch = this.channel;
-    const onOpen = () => {
-      this.update({ phase: this.snap.phase === "connecting" ? "setup" : this.snap.phase });
+    const off = this.link.onMessage((text) => this.onMessage(text));
+    // Repeated every second, so a player who joins or reloads later still learns the state.
+    const announce = () => {
       this.send({ t: "hello", v: NETPLAY_VERSION });
       if (this.snap.myDisc) this.send({ t: "disc", ...this.snap.myDisc });
+      this.send({ t: "ping", ts: performance.now() });
     };
-    const onClose = () => this.end("The other player left or the connection dropped.");
-    const onMessage = (e: MessageEvent) => this.onMessage(e.data);
-    ch.addEventListener("open", onOpen);
-    ch.addEventListener("close", onClose);
-    ch.addEventListener("message", onMessage);
-    if (ch.readyState === "open") onOpen();
-    this.timers.push(setInterval(() => this.send({ t: "ping", ts: performance.now() }), PING_MS));
+    announce();
+    this.timers.push(setInterval(announce, PING_MS));
     return () => {
-      ch.removeEventListener("open", onOpen);
-      ch.removeEventListener("close", onClose);
-      ch.removeEventListener("message", onMessage);
+      off();
       for (const t of this.timers) clearInterval(t);
       this.timers = [];
       this.ticker?.terminate();
@@ -144,6 +137,7 @@ export class NetplaySession {
     this.ticker = ticker;
     ticker.onmessage = () => {
       lockstep.tick();
+      this.link.tick();
       if (
         lockstep.waiting !== this.snap.waiting ||
         lockstep.desyncFrame !== this.snap.desyncFrame ||
@@ -166,10 +160,10 @@ export class NetplaySession {
     const msg = parsed.data;
     switch (msg.t) {
       case "hello":
-        this.update({ peerReady: true });
+        if (!this.snap.peerReady) this.update({ peerReady: true });
         break;
       case "disc":
-        this.update({ peerDisc: { id: msg.id, name: msg.name } });
+        if (this.snap.peerDisc?.id !== msg.id) this.update({ peerDisc: { id: msg.id, name: msg.name } });
         break;
       case "ping":
         this.send({ t: "pong", ts: msg.ts });
@@ -192,16 +186,7 @@ export class NetplaySession {
   }
 
   private send(msg: NetplayMsg): void {
-    if (this.channel.readyState === "open") this.channel.send(JSON.stringify(msg));
-  }
-
-  private end(reason: string): void {
-    if (this.snap.phase === "ended") return;
-    for (const t of this.timers) clearInterval(t);
-    this.timers = [];
-    this.ticker?.terminate();
-    this.ticker = null;
-    this.update({ phase: "ended", error: reason, waiting: false });
+    if (this.link.open) this.link.send(JSON.stringify(msg));
   }
 
   private update(patch: Partial<NetplaySnapshot>): void {
