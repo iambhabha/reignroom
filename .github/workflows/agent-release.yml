@@ -18,6 +18,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 30
     defaults:
       run:
         shell: pwsh
@@ -47,7 +48,7 @@ jobs:
           "VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Install (PyInstaller with bootloader built from source)
-        run: python -m pip install --no-binary pyinstaller pyinstaller==6.22.3 websockets==17.3 vgamepad==0.1.0 pytest==9.1.1
+        run: python -m pip install --no-binary pyinstaller pyinstaller==6.22.3 websockets==17.3 pytest==9.1.1 "vgamepad @ git+https://github.com/yannbouteiller/vgamepad@3f910aa8bbde49a576683db74ad5e4a0879f8a80"
 
       - name: Test
         run: python -m pytest -q

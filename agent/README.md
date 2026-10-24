@@ -61,7 +61,10 @@ py -3.14 -m venv .venv
 The build is a folder, `dist\reignroom-agent\` (one-folder mode). Releases are built by
 `.github/workflows/agent-release.yml` with PyInstaller's bootloader compiled from source.
 
-Python 3.14 is verified: vgamepad 0.1.0 creates controllers through ViGEmBus, websockets 17.3
-and PyInstaller 6.22.3 both support it, and the built `.exe` was run end to end.
-Set `VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true` before installing so vgamepad doesn't run its bundled
-(older) driver installer.
+Python 3.14 is verified: vgamepad creates controllers through ViGEmBus, websockets 17.3 and
+PyInstaller 6.22.3 both support it, and the built `.exe` was run end to end.
+
+vgamepad is pinned to upstream commit `3f910aa` (version 0.1.3, not on PyPI). The PyPI release
+0.1.0 always starts ViGEmBus's interactive installer during `pip install` when the driver is
+missing; 0.1.3 skips it when `VGAMEPAD_SKIP_VIGEMBUS_INSTALL=true` is set, which CI and the
+release workflow do. Set it yourself before installing on a PC without the driver.
