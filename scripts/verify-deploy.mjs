@@ -126,6 +126,18 @@ const errors = [host, ...guests].flatMap((c) => c.inbox.filter((m) => m.t === "e
 check("signaling burst (3 offers + 120 candidates) delivered", got.every(([s, i]) => s === 1 && i === 40), JSON.stringify(got));
 check("no rate-limit errors or disconnects", errors.length === 0 && [host, ...guests].every((c) => c.closed === null));
 
+// Netplay relay at a match's rate: both players, ~32 bundles a second, for 2 seconds.
+const [p2] = guests;
+for (let i = 0; i < 64; i++) {
+  host.ws.send(JSON.stringify({ t: "np", to: p2.welcome.peer, d: `[${i}]` }));
+  p2.ws.send(JSON.stringify({ t: "np", to: host.welcome.peer, d: `[${i}]` }));
+  if (i % 32 === 31) await wait(1000);
+}
+await wait(1500);
+const npGot = [p2.inbox.filter((m) => m.t === "np").length, host.inbox.filter((m) => m.t === "np").length];
+const npErrors = [host, p2].flatMap((c) => c.inbox.filter((m) => m.t === "error"));
+check("netplay relay both ways at match rate", npGot[0] === 64 && npGot[1] === 64 && npErrors.length === 0, JSON.stringify(npGot));
+
 const ice = await fetch(`${BASE}/api/rooms/${code}/ice`, {
   method: "POST",
   body: JSON.stringify({ resume: guests[0].welcome.resume }),
