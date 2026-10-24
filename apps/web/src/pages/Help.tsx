@@ -123,6 +123,32 @@ export function Help() {
         </p>
       </Problem>
 
+      <Problem id="browser-slow" title="The browser emulator or netplay runs slower than 60 fps">
+        <p>
+          The browser modes use Play!, a PS2 emulator that runs inside the browser. On a fast PC Urban Reign runs at about
+          45–55 fps there, so fights are slightly slower than on a PS2. For full speed and four players, host with PCSX2.
+        </p>
+        <ul>
+          <li>Close other heavy tabs and programs, and keep the laptop plugged in.</li>
+          <li>In netplay both games run at the speed of the slower computer.</li>
+        </ul>
+      </Problem>
+
+      <Problem id="netplay-disc" title="Netplay says the discs aren't the same">
+        <p>
+          Both players need the same version of the game (same region, for example both USA) in the same file format
+          (both ISO or both CHD). Each player uses their own copy; ReignRoom never provides game files.
+        </p>
+      </Problem>
+
+      <Problem id="netplay-sync" title="Netplay shows “out of sync”">
+        <p>
+          The two games stopped matching, so what each player sees may now differ. End netplay, reload the page on both
+          sides and start a new match. If it keeps happening at the same point, note the frame number shown and tell
+          us via the contact page.
+        </p>
+      </Problem>
+
       <Problem id="no-sound" title="Guests have no sound">
         <p>
           Browsers can't capture sound from a single window on Windows. Choose <Path>Entire screen with sound</Path>{" "}

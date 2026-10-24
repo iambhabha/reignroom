@@ -92,8 +92,8 @@ export function Home() {
           Play Urban Reign online
         </h1>
         <p className="mt-3 text-lg text-muted">
-          One player hosts the PS2 game in PCSX2 and streams it. Up to three friends join from their
-          browser and play with their own controllers.
+          One player hosts the PS2 game and friends join from their browser with their own controllers: up to
+          four players with PCSX2, or two players right in the browser, by stream or by netplay.
         </p>
       </section>
 
@@ -151,7 +151,8 @@ export function Home() {
           <div>
             <h2 className="font-display text-2xl font-bold uppercase">Host a room</h2>
             <p className="mt-1 text-muted">
-              You need a Windows PC with PCSX2 and your own Urban Reign disc image.{" "}
+              You need your own Urban Reign disc image, and PCSX2 on Windows for four players and full speed.
+              The browser modes need only Chrome or Edge.{" "}
               <Link to="/host" className="font-semibold text-accent-text underline underline-offset-4">
                 Host setup guide
               </Link>
