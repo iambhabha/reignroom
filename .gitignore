@@ -30,3 +30,11 @@ apps/worker/worker-configuration.d.ts
 
 # Written by the agent release workflow
 agent/reignroom_agent/site_origin.txt
+
+# Local env files that may hold secrets. apps/web/.env.production is committed on purpose
+# (public values only: repo URL, contact email).
+.env
+.env.local
+.env.*.local
+# The agent keeps its token in %LOCALAPPDATA%, never in the repo; ignore it here just in case.
+agent-token.txt
