@@ -29,6 +29,18 @@ def test_token_file_is_readable_only_by_this_user_and_system(tmp_path, monkeypat
     assert "builtin\\administrators" not in text
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ACLs")
+def test_token_file_drops_explicit_admin_entries(tmp_path):
+    # What a file made by an elevated process looks like (as on GitHub's Windows runners).
+    path = tmp_path / "agent-token.txt"
+    path.write_text("x")
+    subprocess.run(["icacls", str(path), "/grant", "*S-1-5-32-544:F", "*S-1-3-4:F"], capture_output=True, check=True)
+    cli.restrict_to_current_user(path)
+    text = subprocess.run(["icacls", str(path)], capture_output=True, text=True).stdout.lower()
+    assert "builtin\\administrators" not in text and "owner rights" not in text
+    assert "nt authority\\system:(f)" in text
+
+
 def test_release_build_trusts_only_the_bundled_site(tmp_path, monkeypatch):
     (tmp_path / "site_origin.txt").write_text("https://reignroom.example.workers.dev\n")
     monkeypatch.setattr(site, "_bundle_dir", lambda: tmp_path)

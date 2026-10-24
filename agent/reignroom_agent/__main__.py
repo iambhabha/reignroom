@@ -59,6 +59,10 @@ def load_or_create_token(renew: bool) -> str:
     return token
 
 
+# Administrators, Users, Authenticated Users, Everyone, CREATOR OWNER, OWNER RIGHTS.
+_OTHER_PRINCIPALS = ("S-1-5-32-544", "S-1-5-32-545", "S-1-5-11", "S-1-1-0", "S-1-3-0", "S-1-3-4")
+
+
 def restrict_to_current_user(path: Path) -> None:
     """Drop inherited permissions: only this Windows account and SYSTEM may read the token.
 
@@ -72,12 +76,18 @@ def restrict_to_current_user(path: Path) -> None:
     if not user:
         return
     account = domain + "\\" + user if domain else user
-    subprocess.run(
-        ["icacls", str(path), "/inheritance:r", "/grant:r", f"{account}:F", "*S-1-5-18:F"],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    for args in (
+        ["/inheritance:r", "/grant:r", f"{account}:F", "*S-1-5-18:F"],
+        # A file made by an elevated (administrator) process also gets explicit entries for
+        # these groups, which /inheritance:r keeps. Remove them too.
+        ["/remove:g", *(f"*{sid}" for sid in _OTHER_PRINCIPALS)],
+    ):
+        subprocess.run(
+            ["icacls", str(path), *args],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
