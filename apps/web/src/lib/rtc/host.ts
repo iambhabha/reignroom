@@ -1,5 +1,5 @@
 import { GuestInput, type HostToGuest, type RoomState, type Slot } from "@reignroom/protocol";
-import type { AgentBridge } from "../agent.ts";
+import type { PadBridge } from "../pad-bridge.ts";
 import type { RoomConnection, SignalMsg } from "../room-connection.ts";
 import { candidateFromWire, candidateToWire } from "./wire.ts";
 import { fetchIce, type IceConfig } from "./ice.ts";
@@ -8,7 +8,7 @@ import { hostStats, type HostPeerStats } from "./stats.ts";
 import { startTestPattern } from "./test-pattern.ts";
 import { applyQuality, encodingFor, preferCodecs } from "./tuning.ts";
 
-export type Source = "window" | "screen" | "test";
+export type Source = "window" | "screen" | "test" | "emulator" | "netplay";
 
 export type PeerPhase = "connecting" | "connected" | "failed";
 
@@ -17,12 +17,14 @@ export interface HostSnapshot {
   starting: boolean;
   source: Source | null;
   /** What the person actually picked in the browser's share dialog. */
-  surface: "monitor" | "window" | "browser" | "test" | null;
+  surface: "monitor" | "window" | "browser" | "test" | "emulator" | "netplay" | null;
   hasAudio: boolean;
   quality: Quality;
   preview: MediaStream | null;
   error: string | null;
   peers: Record<string, { phase: PeerPhase; stats: HostPeerStats | null }>;
+  /** Netplay source: each guest's "netplay" data channel, by peer id. */
+  netplay: Record<string, RTCDataChannel>;
 }
 
 interface Peer {
@@ -69,12 +71,13 @@ export class HostStream {
     preview: null,
     error: null,
     peers: {},
+    netplay: {},
   };
 
   constructor(
     private readonly conn: RoomConnection,
     private readonly code: string,
-    private readonly bridge: AgentBridge,
+    private readonly bridge: PadBridge,
   ) {}
 
   /** Starts listening for signaling and agent acks; the returned function stops everything. */
@@ -101,7 +104,8 @@ export class HostStream {
   };
   getSnapshot = () => this.snap;
 
-  async start(source: Source): Promise<void> {
+  /** `given` is the stream for the "emulator" source (the in-browser emulator's canvas). */
+  async start(source: Source, given?: MediaStream): Promise<void> {
     if (this.snap.live || this.snap.starting) return;
     this.update({ starting: true, error: null });
     let stream: MediaStream;
@@ -110,6 +114,15 @@ export class HostStream {
         const pattern = startTestPattern();
         stream = pattern.stream;
         this.stopSource = pattern.stop;
+      } else if (source === "netplay") {
+        // No media: both players run the game themselves; only input crosses the network.
+        stream = new MediaStream();
+        this.stopSource = null;
+      } else if (source === "emulator") {
+        if (!given) throw new Error("no emulator stream");
+        stream = given;
+        // The emulator keeps running; only this capture of its canvas ends.
+        this.stopSource = () => stream.getTracks().forEach((t) => t.stop());
       } else {
         stream = await navigator.mediaDevices.getDisplayMedia(captureOptions(source));
         this.stopSource = () => stream.getTracks().forEach((t) => t.stop());
@@ -121,17 +134,21 @@ export class HostStream {
     this.ice = await fetchIce(this.code);
 
     const video = stream.getVideoTracks()[0];
-    if (!video) {
+    if (!video && source !== "netplay") {
       this.stopSource?.();
       this.update({ starting: false, error: "No video was shared. Try again and pick the PCSX2 window." });
       return;
     }
-    video.contentHint = "motion";
-    // The person pressed the browser's own "Stop sharing" button.
-    video.addEventListener("ended", () => this.stop());
+    if (video) {
+      video.contentHint = "motion";
+      // The person pressed the browser's own "Stop sharing" button.
+      video.addEventListener("ended", () => this.stop());
+    }
 
     const surface =
-      source === "test" ? "test" : ((video.getSettings().displaySurface as HostSnapshot["surface"]) ?? null);
+      source === "test" || source === "emulator" || source === "netplay"
+        ? source
+        : ((video?.getSettings().displaySurface as HostSnapshot["surface"]) ?? null);
     this.update({
       live: true,
       starting: false,
@@ -156,7 +173,7 @@ export class HostStream {
     this.stopSource?.();
     this.stopSource = null;
     this.conn.send({ t: "stream", live: false });
-    this.update({ live: false, source: null, surface: null, hasAudio: false, preview: null, peers: {} });
+    this.update({ live: false, source: null, surface: null, hasAudio: false, preview: null, peers: {}, netplay: {} });
   }
 
   setQuality(quality: Quality): void {
@@ -221,7 +238,8 @@ export class HostStream {
   }
 
   private tellBridge(peerId: string): void {
-    this.sendToGuest(peerId, { t: "bridge", ok: this.bridge.paired, pad: this.slots.get(peerId) ?? null });
+    const slot = this.slots.get(peerId) ?? null;
+    this.sendToGuest(peerId, { t: "bridge", ok: this.bridge.paired && (slot === null || this.bridge.accepts(slot)), pad: slot });
   }
 
   private sendToGuest(peerId: string, msg: HostToGuest): void {
@@ -245,6 +263,10 @@ export class HostStream {
     input.onmessage = (e) => this.onInput(peerId, e.data);
     const peer: Peer = { pc, input, createdAt: Date.now(), pendingIce: [], sample: null };
     this.peers.set(peerId, peer);
+    if (this.snap.source === "netplay") {
+      const netplay = pc.createDataChannel("netplay", { ordered: true });
+      this.update({ netplay: { ...this.snap.netplay, [peerId]: netplay } });
+    }
     this.setPeer(peerId, { phase: "connecting", stats: null });
 
     const height = this.sourceHeight();
@@ -308,7 +330,8 @@ export class HostStream {
     const slot = this.slots.get(peerId);
     if (slot) this.bridge.release(slot);
     const { [peerId]: _, ...rest } = this.snap.peers;
-    this.update({ peers: rest });
+    const { [peerId]: _np, ...netplay } = this.snap.netplay;
+    this.update({ peers: rest, netplay });
   }
 
   private async sampleStats(): Promise<void> {

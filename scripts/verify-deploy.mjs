@@ -76,6 +76,18 @@ check("home page", home.status === 200 && html.includes('id="root"'), `HTTP ${ho
 const csp = home.headers.get("content-security-policy") ?? "";
 check("CSP header", csp.includes("default-src 'self'") && csp.includes("ws://127.0.0.1:47823"));
 check("Referrer-Policy no-referrer", home.headers.get("referrer-policy") === "no-referrer");
+check(
+  "cross-origin isolated (browser emulator)",
+  home.headers.get("cross-origin-opener-policy") === "same-origin" &&
+    home.headers.get("cross-origin-embedder-policy") === "require-corp" &&
+    csp.includes("'wasm-unsafe-eval'"),
+);
+const wasm = await fetch(`${BASE}/emu/rr2/Play.wasm`, { method: "HEAD" });
+check(
+  "emulator build served",
+  wasm.status === 200 && wasm.headers.get("content-type") === "application/wasm" && /immutable/.test(wasm.headers.get("cache-control") ?? ""),
+  `HTTP ${wasm.status}, ${wasm.headers.get("content-type")}`,
+);
 check("page not cached long", /no-cache/.test(home.headers.get("cache-control") ?? ""), home.headers.get("cache-control"));
 
 const route = await fetch(`${BASE}/r/ABC234`);

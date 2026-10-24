@@ -1,8 +1,14 @@
+# Cross-Origin-Opener/Embedder-Policy make the site cross-origin isolated: the in-browser
+# emulator needs threads (SharedArrayBuffer). The site loads nothing from other origins except
+# CORS fetches (GitHub API), which isolation allows. 'wasm-unsafe-eval' lets the emulator
+# compile WebAssembly, including the code its recompiler generates at run time.
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://127.0.0.1:47823 https://api.github.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' ws://127.0.0.1:47823 https://api.github.com; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
 
 # The page itself is re-checked on every load so a deploy is picked up immediately.
 /
@@ -14,4 +20,8 @@
 # Built files have content hashes in their names, so they never change. A missing one is a
 # real 404 from the Worker (not index.html), so nothing wrong can be cached under these URLs.
 /assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The emulator build lives in a versioned folder (/emu/rr2/), so it never changes either.
+/emu/*
   Cache-Control: public, max-age=31536000, immutable

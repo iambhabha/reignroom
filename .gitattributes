@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.ps1 text eol=crlf
 *.bat text eol=crlf
+# Built emulator files: keep them byte-for-byte as built (no line-ending changes).
+apps/web/public/emu/** -text

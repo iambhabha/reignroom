@@ -38,14 +38,29 @@ export function Legal() {
             without being stored.
           </li>
           <li>
-            <strong>In your browser</strong>: your name, host access for rooms you created, and the host's agent pairing
-            token. Clearing site data removes them.
+            <strong>In your browser</strong>: your name, host access for rooms you created, the host's agent pairing
+            token, and (browser emulator only, if you choose a file) a handle to the disc image file you picked, so you
+            can reopen it with one click. The file itself is never copied or uploaded. Clearing site data removes them.
           </li>
           <li>
             <strong>The host agent</strong> runs only on the host's PC, listens only to that PC, and keeps its pairing
             token in the host's own Windows profile.
           </li>
         </ul>
+      </Section>
+
+      <Section id="emulator" title="Browser emulator">
+        <p>
+          The optional browser emulator is{" "}
+          <a href="https://github.com/jpd002/Play-" className="underline underline-offset-2">
+            Play!
+          </a>{" "}
+          by Jean-Philip Desjardins, used under the BSD 2-Clause license (
+          <a href="/emu/rr2/LICENSE.txt" className="underline underline-offset-2">
+            license text
+          </a>
+          ), with ReignRoom's controller changes. It runs in the host's own browser on the host's own disc image.
+        </p>
       </Section>
 
       <Section id="services" title="Services used">

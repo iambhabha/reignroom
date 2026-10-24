@@ -1,12 +1,16 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import type { RoomState } from "@reignroom/protocol";
 import { AgentBridge } from "../../lib/agent.ts";
+import { browserEmulator } from "../../lib/emu/emulator.ts";
+import { InputRouter } from "../../lib/pad-bridge.ts";
 import { HostStream, type Source } from "../../lib/rtc/host.ts";
 import { QUALITIES, uploadMbps, type Quality } from "../../lib/rtc/quality.ts";
 import type { RoomConnection } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
 import { Segmented } from "../Segmented.tsx";
 import { BridgePanel } from "./BridgePanel.tsx";
+import { EmulatorScreen } from "./EmulatorScreen.tsx";
+import { NetplayView } from "./NetplayView.tsx";
 import { fps, routeLabel, rttLabel, size } from "./format.ts";
 
 const SOURCES: { value: Source; title: string; detail: string }[] = [
@@ -17,19 +21,39 @@ const SOURCES: { value: Source; title: string; detail: string }[] = [
     detail: "Includes game sound. Guests also see notifications and anything else on that screen.",
   },
   { value: "test", title: "Test pattern", detail: "Check that guests get smooth video before starting PCSX2." },
+  {
+    value: "emulator",
+    title: "Browser emulator (beta)",
+    detail: "Runs the game in this tab, no PCSX2 or agent needed. Two players only, slower than PCSX2, no sound yet.",
+  },
+  {
+    value: "netplay",
+    title: "Netplay (beta, both have the game)",
+    detail:
+      "You and the P2 guest each run the game in your own browser; only controller input is sent. Sharp picture and sound for both. P2 needs their own copy of the same version.",
+  },
 ];
 
 const qualityLabel = (q: Quality) => q.replace("p60", "p");
 
 export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomState }) {
   const [bridge] = useState(() => new AgentBridge());
-  const [stream] = useState(() => new HostStream(conn, room.code, bridge));
+  const [emulator] = useState(() => browserEmulator());
+  const [router] = useState(() => new InputRouter(bridge, emulator));
+  const [stream] = useState(() => new HostStream(conn, room.code, router));
   const snap = useSyncExternalStore(stream.subscribe, stream.getSnapshot);
+  const emu = useSyncExternalStore(emulator.subscribe, emulator.getSnapshot);
   const [source, setSource] = useState<Source>("window");
+  const active = snap.live ? snap.source : source;
+  const usingEmulator = active === "emulator";
+  const netplay = active === "netplay";
+  const p2 = room.members.find((m) => !m.host && m.slot === 2 && m.online) ?? null;
 
+  useEffect(() => router.attach(), [router]);
   useEffect(() => stream.attach(), [stream]);
   useEffect(() => bridge.attach(), [bridge]);
   useEffect(() => stream.syncRoom(room), [stream, room]);
+  useEffect(() => router.setTarget(usingEmulator ? "emulator" : netplay ? "off" : "agent"), [router, usingEmulator, netplay]);
 
   const guests = room.members.filter((m) => !m.host);
   const onlineGuests = guests.filter((m) => m.online).length;
@@ -48,6 +72,9 @@ export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomStat
         {!snap.live ? (
           <>
             <SourcePicker value={source} onChange={setSource} disabled={snap.starting} />
+            {usingEmulator && <EmulatorScreen emulator={emulator} />}
+            {!netplay && (
+              <>
             <Segmented
               label="Quality (60 fps)"
               options={QUALITIES}
@@ -57,6 +84,8 @@ export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomStat
               disabled={snap.starting}
             />
             <Estimate mbps={estimate} guests={onlineGuests} />
+              </>
+            )}
             {snap.error && (
               <p role="alert" className="font-medium text-danger">
                 {snap.error}
@@ -65,22 +94,33 @@ export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomStat
             <Button
               variant="primary"
               size="lg"
-              disabled={snap.starting}
-              onClick={() => void stream.start(source)}
+              disabled={snap.starting || (source === "emulator" && emu.phase !== "running")}
+              onClick={() =>
+                void (source === "emulator" ? stream.start(source, emulator.captureStream()) : stream.start(source))
+              }
             >
-              {snap.starting ? "Waiting for you to pick…" : "Start streaming"}
+              {snap.starting
+                ? "Waiting for you to pick…"
+                : source === "netplay"
+                  ? "Open netplay"
+                  : source === "emulator" && emu.phase !== "running"
+                    ? "Load the disc to start streaming"
+                    : "Start streaming"}
             </Button>
           </>
         ) : (
           <>
+            {usingEmulator && <EmulatorScreen emulator={emulator} />}
+            {netplay && <NetplayView role="host" channel={p2 ? (snap.netplay[p2.peer] ?? null) : null} peerName={p2?.name ?? null} />}
             {snap.surface === "monitor" && (
               <p role="status" className="rounded-lg border border-accent/60 bg-surface-2 px-4 py-3 text-sm">
                 <strong className="font-semibold">You're sharing your entire screen.</strong> Guests can see
                 notifications, chat pop-ups and any window you open on it.
               </p>
             )}
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
-              <Preview stream={snap.preview} />
+            {!netplay && (
+            <div className={usingEmulator ? "flex flex-col gap-3" : "grid gap-4 sm:grid-cols-[minmax(0,14rem)_1fr]"}>
+              {!usingEmulator && <Preview stream={snap.preview} />}
               <div className="flex flex-col gap-3">
                 <Segmented
                   label="Quality (60 fps)"
@@ -92,14 +132,15 @@ export function HostPanel({ conn, room }: { conn: RoomConnection; room: RoomStat
                 <Estimate mbps={estimate} guests={onlineGuests} />
               </div>
             </div>
+            )}
             <GuestList room={room} snap={snap} />
             <Button variant="danger" onClick={() => stream.stop()} className="self-start">
-              Stop streaming
+              {netplay ? "End netplay" : "Stop streaming"}
             </Button>
           </>
         )}
       </section>
-      <BridgePanel bridge={bridge} room={room} />
+      {!usingEmulator && !netplay && <BridgePanel bridge={bridge} room={room} />}
     </>
   );
 }
@@ -204,7 +245,9 @@ function GuestList({ room, snap }: { room: RoomState; snap: ReturnType<HostStrea
               : !p
                 ? "Waiting"
                 : p.phase === "connected"
-                  ? "Watching"
+                  ? snap.source === "netplay"
+                    ? "Connected"
+                    : "Watching"
                   : p.phase === "failed"
                     ? "Retrying…"
                     : "Connecting…";

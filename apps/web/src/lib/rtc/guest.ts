@@ -17,6 +17,8 @@ export interface GuestSnapshot {
   bridge: { ok: boolean; pad: Slot | null } | null;
   /** Median time from sending input to the host's agent confirming it was applied. */
   inputRttMs: number | null;
+  /** Netplay: the host opened a "netplay" channel (no video; both run the game). */
+  netplay: RTCDataChannel | null;
 }
 
 /** Recovery thresholds: ask the host for a fresh offer only on clear evidence of trouble. */
@@ -62,6 +64,7 @@ export class GuestStream {
     inputOpen: false,
     bridge: null,
     inputRttMs: null,
+    netplay: null,
   };
 
   constructor(
@@ -156,7 +159,12 @@ export class GuestStream {
       if (this.host) this.conn.send({ t: "ice", to: this.host, cand: candidateToWire(e.candidate) });
     };
     pc.ondatachannel = (e) => {
-      if (e.channel.label !== "input" || this.pc !== pc) return;
+      if (this.pc !== pc) return;
+      if (e.channel.label === "netplay") {
+        this.update({ netplay: e.channel, phase: "playing" });
+        return;
+      }
+      if (e.channel.label !== "input") return;
       const dc = e.channel;
       this.input = dc;
       dc.onopen = () => {
@@ -246,13 +254,17 @@ export class GuestStream {
     }
 
     const state = pc?.connectionState;
+    // Netplay has no video, so only the connection itself says whether it's broken.
+    const videoStuck =
+      !this.snap.netplay &&
+      ((this.lastFrames > 0 && now - this.lastProgress > FROZEN_MS) ||
+        (this.lastFrames === 0 && now - this.pcCreatedAt > FIRST_FRAME_MS));
     const needsOffer =
       !pc ||
       state === "failed" ||
       state === "closed" ||
       (this.disconnectedSince !== null && now - this.disconnectedSince > DISCONNECTED_MS) ||
-      (this.lastFrames > 0 && now - this.lastProgress > FROZEN_MS) ||
-      (this.lastFrames === 0 && now - this.pcCreatedAt > FIRST_FRAME_MS);
+      videoStuck;
     if (needsOffer && now - this.lastAsk > ASK_INTERVAL_MS) {
       this.lastAsk = now;
       if (this.snap.phase === "playing") this.update({ phase: "reconnecting" });
@@ -265,6 +277,7 @@ export class GuestStream {
     this.pc = null;
     this.input = null;
     this.rtts = [];
+    if (this.snap.netplay) this.update({ netplay: null });
     if (this.snap.inputOpen || this.snap.bridge) this.update({ inputOpen: false, bridge: null, inputRttMs: null });
   }
 

@@ -6,6 +6,7 @@ import type { RoomConnection } from "../../lib/room-connection.ts";
 import { Button } from "../Button.tsx";
 import { ControllerTest } from "../input/ControllerTest.tsx";
 import { fps, routeLabel, rttLabel, size } from "./format.ts";
+import { NetplayView } from "./NetplayView.tsx";
 
 export function GuestPanel({ conn, room, me }: { conn: RoomConnection; room: RoomState; me: string }) {
   const [stream] = useState(() => new GuestStream(conn, room.code));
@@ -53,6 +54,25 @@ export function GuestPanel({ conn, room, me }: { conn: RoomConnection; room: Roo
     if (document.fullscreenElement) void document.exitFullscreen();
     else void frameRef.current?.requestFullscreen().catch(() => {});
   };
+
+  const mySlot = room.members.find((m) => m.peer === me)?.slot ?? null;
+  if (snap.netplay) {
+    return (
+      <section aria-labelledby="stream-heading" className="flex flex-col gap-3">
+        <h2 id="stream-heading" className="font-display text-xl font-bold uppercase">
+          Netplay
+        </h2>
+        {mySlot === 2 ? (
+          <NetplayView role="guest" channel={snap.netplay} peerName={host?.name ?? null} />
+        ) : (
+          <p className="rounded-xl border border-border bg-surface p-4">
+            {host?.name ?? "The host"} is playing netplay with the guest in the P2 slot. In netplay each player runs the
+            game on their own computer, so there's no stream to watch. Take the P2 slot (if it's free) to play.
+          </p>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section aria-labelledby="stream-heading" className="flex flex-col gap-3">
